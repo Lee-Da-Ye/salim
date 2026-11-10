@@ -1,6 +1,6 @@
 {
-  "name": "살림장부",
-  "short_name": "살림장부",
+  "name": "Moneta",
+  "short_name": "Moneta",
   "description": "내 기기에 저장하고 구글 드라이브로 동기화하는 가계부",
   "lang": "ko",
   "start_url": "./",

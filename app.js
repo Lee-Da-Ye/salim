@@ -1,4 +1,4 @@
-/* 살림장부 — 로컬 우선 가계부 PWA */
+/* Moneta — 로컬 우선 가계부 PWA (저장소 이름 salim-*은 기존 데이터 호환 위해 유지) */
 (function () {
   'use strict';
 
@@ -86,6 +86,28 @@
     ['신한카드', 'tr_card', ''], ['우리카드결제', 'tr_card', ''], ['삼성카드', 'tr_card', ''], ['현대카드', 'tr_card', ''], ['KB카드', 'tr_card', ''], ['카드결제', 'tr_card', ''],
     ['급여', 'in_salary', ''], ['캐시백', 'in_etc', '환급·캐시백'], ['포인트', 'in_etc', '환급·캐시백'], ['환불', 'in_etc', '환급·캐시백']
   ];
+  // 반복 기록: [이름, 카테고리, 하위, 금액, 매월 일, 결제수단, 'fixed'=확정 | 'estimate'=예정(금액 확인 필요)]
+  const DEFAULT_RECURRING = [
+    ['급여', 'in_salary', '', 4150000, 20, 'm_hana', 'estimate'],
+    ['나비야사랑해', 'fx_dona', '', 30000, 1, 'm_hana', 'fixed'],
+    ['모임계', 'fx_gye', '', 20000, 1, 'm_hana', 'fixed'],
+    ['전세대출 이자', 'fx_loan', '', 220000, 12, 'm_hana', 'estimate'],
+    ['우리카드 교통', 'fx_trans', '대중교통', 100000, 14, 'm_woori', 'estimate'],
+    ['통신비', 'fx_tel', '', 6050, 15, 'm_shinhan', 'estimate'],
+    ['도시가스', 'fx_util', '도시가스', 10000, 19, 'm_shinhan', 'estimate'],
+    ['DB손해보험', 'fx_ins', '', 30880, 21, 'm_hana', 'fixed'],
+    ['DB손해보험(2)', 'fx_ins', '', 14220, 21, 'm_hana', 'estimate'],
+    ['관리비(다빈치)', 'fx_mgmt', '', 25000, 21, 'm_hana', 'estimate'],
+    ['청년도약계좌', 'sv_youth', '', 700000, 21, 'm_ibk', 'fixed'],
+    ['주택청약', 'sv_house', '', 20000, 21, 'm_hana', 'fixed'],
+    ['연금저축', 'sv_pension', '', 500000, 21, 'm_hana', 'fixed'],
+    ['ISA', 'sv_isa', '', 584000, 21, 'm_hana', 'fixed'],
+    ['관리비', 'fx_mgmt', '', 100000, 22, 'm_hana', 'fixed'],
+    ['롯데손해보험', 'fx_ins', '', 134012, 26, 'm_hana', 'fixed'],
+    ['고보협', 'fx_dona', '', 50000, 26, 'm_hana', 'fixed']
+  ];
+  const defaultRecurring = (startYm) => DEFAULT_RECURRING.map(([name, c, sub, amount, day, m, mode]) => ({ id: 'rc_' + c + '_' + day + '_' + name.length, name, cat: c, sub, amount, day, method: m, mode, active: true, startYm, updatedAt: 1 }));
+
   // 수입 행에서만 쓰는 규칙 대상 / 출금 행에서만 쓰는 대상
   const INCOME_ONLY = new Set(['in_salary', 'in_etc', 'in_bonus', 'in_welfare']);
 
@@ -138,6 +160,7 @@
       cats: DEFAULT_CATS.map(([id, name, group, budget, subs], i) => ({ id, name, group, budget, subs, order: i, updatedAt: t })),
       methods: DEFAULT_METHODS.map(([id, name, kind], i) => ({ id, name, kind, order: i, updatedAt: t })),
       rules: [],   // 사용자 규칙 (기본 규칙보다 먼저 적용)
+      recurring: defaultRecurring(todayStr().slice(0, 7)),
       tx: [],
       settings: { startDay: 1, myName: '', reserveStart: todayStr().slice(0, 7), reserveOpening: { rs_gym: 0, rs_irr: 0 }, updatedAt: t }
     };
@@ -147,6 +170,7 @@
     S = (await kvGet('state')) || freshState();
     L = (await kvGet('local')) || { deviceId: uid(), clientId: '', lastSync: 0 };
     // 새 기본 카테고리가 추가된 경우 보충
+    if (!S.recurring) S.recurring = defaultRecurring(todayStr().slice(0, 7));
     const have = new Set(S.cats.map(c => c.id));
     DEFAULT_CATS.forEach(([id, name, group, budget, subs], i) => { if (!have.has(id)) S.cats.push({ id, name, group, budget, subs, order: i, updatedAt: now() }); });
   }
@@ -271,6 +295,48 @@
     throw new Error('형식을 알아보지 못했어요. 카드 이용내역(가맹점명·금액·거래일) 또는 통장 거래내역(출금·입금·거래일시) 엑셀을 올려주세요.');
   }
 
+  // ---------- 반복 기록 생성 ----------
+  function monthDate(ym, day) { const [y, m] = ym.split('-').map(Number); const last = new Date(y, m, 0).getDate(); return ym + '-' + pad(Math.min(day, last)); }
+  function generateRecurring() {
+    const today = todayStr(); const thisYm = today.slice(0, 7);
+    const byId = new Set(S.tx.map(t => t.id));
+    let n = 0;
+    for (const r of (S.recurring || [])) {
+      if (r.deleted || !r.active) continue;
+      for (let ym = r.startYm || thisYm; ym <= thisYm; ym = shiftYm(ym, 1)) {
+        const date = monthDate(ym, r.day);
+        if (date > today) break;
+        const id = 'r_' + r.id + '_' + ym;          // 기기마다 같은 ID → 동기화 시 중복 없음
+        if (byId.has(id)) continue;
+        const ts = new Date(date).getTime();        // 고정 타임스탬프 → 사용자가 고치거나 지운 쪽이 항상 이김
+        S.tx.push({ id, recurId: r.id, recurYm: ym, source: 'recurring', pending: r.mode === 'estimate', createdAt: ts, updatedAt: ts,
+          date, time: '', merchant: r.name, memo: '', amount: r.amount, cat: r.cat, sub: r.sub || '', method: r.method });
+        byId.add(id); n++;
+      }
+    }
+    if (n) persist();
+    return n;
+  }
+  // 가져온 실제 내역과 반복 기록 맞추기: 같은 카테고리(수입은 수입끼리) + 날짜 ±10일 + 금액 차이(확정 ±10%, 예정 ±50%)
+  function findRecurringMatch(row, used) {
+    const d0 = new Date(row.date).getTime();
+    const g = cat(row.cat) ? cat(row.cat).group : null;
+    let best = null, bestScore = 1e9;
+    for (const t of liveTx()) {
+      if (t.source !== 'recurring' || t.importKey || used.has(t.id)) continue;
+      const tg = cat(t.cat) ? cat(t.cat).group : null;
+      if (!((row.cat && t.cat === row.cat) || (g === 'income' && tg === 'income'))) continue;
+      const days = Math.abs(new Date(t.date).getTime() - d0) / 864e5;
+      const diff = Math.abs(row.amount - t.amount) / Math.max(Math.abs(t.amount), 1);
+      const rec = (S.recurring || []).find(r => r.id === t.recurId);
+      const tol = rec && rec.mode === 'fixed' ? 0.1 : g === 'income' ? 0.3 : 0.5;
+      if (days > 10 || diff > tol) continue;
+      const score = days / 10 + diff;
+      if (score < bestScore) { best = t; bestScore = score; }
+    }
+    return best;
+  }
+
   // ---------- 집계 ----------
   function stats(ym) {
     const p = period(ym);
@@ -334,6 +400,7 @@
     const perDay = daysLeft > 0 ? Math.max(left, 0) / daysLeft : 0;
     const chip = s === 'ok' ? '<span class="chip ok">예산 안</span>' : s === 'warn' ? '<span class="chip warn">빠르게 쓰는 중</span>' : '<span class="chip bad">초과</span>';
     const unc = st.txs.filter(t => !cat(t.cat)).length;
+    const pend = st.txs.filter(t => t.pending);
     const sample = liveTx().some(t => t.sample);
 
     el.innerHTML = `
@@ -350,6 +417,7 @@
         <div class="kpi"><span>지출</span><b>${man(st.spend)}</b></div>
         <div class="kpi"><span>저축·투자</span><b>${man(st.saving)}</b></div>
       </div>
+      ${pend.length ? `<button class="card" data-go="list" data-filter="pending" style="text-align:left;border-color:var(--warn);color:var(--warn)">금액 확인 필요 ${pend.length}건 (예정 ${won(pend.reduce((s, t) => s + t.amount, 0))}원) — 눌러서 실제 금액으로 확정</button>` : ''}
       ${unc ? `<button class="card" data-go="list" data-filter="unc" style="text-align:left;border-color:var(--warn);color:var(--warn)">미분류 ${unc}건 — 눌러서 분류하기</button>` : ''}
       ${budgetOverview(st, pace)}
       ${reserveCard()}
@@ -405,12 +473,13 @@
     let txs = st.txs.slice();
     const f = UI.filter;
     if (f === 'unc') txs = txs.filter(t => !cat(t.cat));
+    else if (f === 'pending') txs = txs.filter(t => t.pending);
     else if (f !== 'all') txs = txs.filter(t => { const c = cat(t.cat); return c && (c.group === f); });
     if (UI.q) { const q = UI.q.toLowerCase(); txs = txs.filter(t => (t.merchant + ' ' + (t.memo || '') + ' ' + (cat(t.cat) ? cat(t.cat).name : '') + ' ' + (t.sub || '')).toLowerCase().includes(q)); }
     txs.sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')) || b.createdAt - a.createdAt);
     const days = {};
     txs.forEach(t => { (days[t.date] = days[t.date] || []).push(t); });
-    const fl = [['all', '전체'], ['unc', '미분류'], ['living', '생활'], ['fixed', '고정'], ['reserve', '적립'], ['saving', '저축'], ['income', '수입'], ['transfer', '이체·제외']];
+    const fl = [['all', '전체'], ['pending', '확인 필요'], ['unc', '미분류'], ['living', '생활'], ['fixed', '고정'], ['reserve', '적립'], ['saving', '저축'], ['income', '수입'], ['transfer', '이체·제외']];
     const wd = ['일', '월', '화', '수', '목', '금', '토'];
     el.innerHTML = `
       <input class="search" id="q" type="search" placeholder="가맹점·메모·카테고리 검색" value="${esc(UI.q)}" aria-label="검색">
@@ -419,7 +488,7 @@
         const sum = days[d].reduce((s, t) => { const c = cat(t.cat); return s + (!c || GROUPS[c.group].spend ? t.amount : 0); }, 0);
         return `<div class="day"><div class="day-h"><span>${d.slice(5).replace('-', '.')} (${wd[new Date(d).getDay()]})</span><span class="num">${sum > 0 ? '-' + won(sum) : sum < 0 ? '+' + won(-sum) : ''}</span></div>
           ${days[d].map(txRow).join('')}</div>`;
-      }).join('') : `<div class="card empty"><p>${f === 'unc' ? '미분류 내역이 없어요.' : '이 기간에 내역이 없어요.'}</p></div>`}
+      }).join('') : `<div class="card empty"><p>${f === 'unc' ? '미분류 내역이 없어요.' : f === 'pending' ? '확인할 예정 기록이 없어요.' : '이 기간에 내역이 없어요.'}</p></div>`}
     `;
     $('#q', el).oninput = e => { UI.q = e.target.value; const pos = e.target.selectionStart; renderList(); const q = $('#q'); q.focus(); q.setSelectionRange(pos, pos); };
     $$('.fchip', el).forEach(b => b.onclick = () => { UI.filter = b.dataset.f; renderList(); });
@@ -432,7 +501,7 @@
     const cls = g === 'income' ? 'in' : g && !GROUPS[g].spend ? 'ex' : '';
     return `<button class="tx ${c ? '' : 'unc'}" data-id="${t.id}">
       <span class="ic" style="background:${color}">${esc((c ? c.name : '?').slice(0, 2))}</span>
-      <span class="mid"><span class="t1" style="display:block">${esc(t.merchant || (c ? c.name : '미분류'))}${t.sample ? '<span class="sample-tag">예시</span>' : ''}</span>
+      <span class="mid"><span class="t1" style="display:block">${esc(t.merchant || (c ? c.name : '미분류'))}${t.sample ? '<span class="sample-tag">예시</span>' : ''}${t.pending ? '<span class="sample-tag">예정</span>' : t.source === 'recurring' ? '<span class="sample-tag" style="color:var(--muted)">반복</span>' : ''}</span>
       <span class="t2" style="display:block">${c ? esc(c.name + (t.sub ? ' · ' + t.sub : '')) : '미분류 — 눌러서 분류'}${m ? ' · ' + esc(m.name) : ''}${t.time ? ' · ' + t.time : ''}</span></span>
       <span class="amt ${cls}">${sign}${won(Math.abs(t.amount))}${t.amount < 0 ? ' 취소' : ''}</span>
     </button>`;
@@ -475,6 +544,7 @@
       <div class="sheet-b">
         <div class="seg" role="tablist">${[['expense', '지출'], ['income', '수입'], ['saving', '저축'], ['transfer', '이체']].map(([k, n]) => `<button data-type="${k}" class="${ED.type === k ? 'on' : ''}">${n}</button>`).join('')}</div>
         ${tm.length ? `<div><span class="lab">자주 쓰는 기록</span><div class="tmpl">${tm.map((t, i) => `<button data-tm="${i}">${esc(t.merchant)}<small>${esc(cat(t.cat).name + (t.sub ? '·' + t.sub : ''))} · ${esc(method(t.method) ? method(t.method).name : '')}</small></button>`).join('')}</div></div>` : ''}
+        ${ED.pending ? '<div class="banner">반복 기록의 예정 금액이에요. 실제 금액으로 고쳐서 저장하면 확정돼요.</div>' : ''}
         <div class="amount" aria-live="polite"><b id="amtShow">${ED.neg ? '-' : ''}${won(Number(ED.amtStr) || 0)}</b><span>원</span></div>
         <div class="quick">${[[1000, '+1천'], [5000, '+5천'], [10000, '+1만'], [50000, '+5만'], [100000, '+10만']].map(([v, n]) => `<button data-add="${v}">${n}</button>`).join('')}<button data-neg="1">${ED.neg ? '취소(−) 해제' : '취소/환불(−)'}</button></div>
         <div class="keypad">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', '⌫'].map(k => `<button data-k="${k}" aria-label="${k === '⌫' ? '지우기' : k}">${k}</button>`).join('')}</div>
@@ -486,7 +556,7 @@
         <label class="field"><span class="lab">메모</span><input id="edMemo" value="${esc(ED.memo || '')}" placeholder="선택"></label>
         ${!ED.isNew && ED.merchant ? `<label class="small" style="display:flex;gap:8px;align-items:center"><input type="checkbox" id="edRule"> "${esc(ED.merchant)}"은 다음부터 이 카테고리로 자동 분류</label>` : ''}
       </div>
-      <div class="sheet-f">${ED.isNew ? '' : '<button class="btn danger" id="edDel" style="flex:0 0 auto">삭제</button>'}<button class="btn" id="edSave">저장</button></div>
+      <div class="sheet-f">${ED.isNew ? '' : '<button class="btn danger" id="edDel" style="flex:0 0 auto">삭제</button>'}${ED.pending ? '<button class="btn ghost" id="edConfirm">이 금액으로 확정</button>' : ''}<button class="btn" id="edSave">저장</button></div>
     </div>`;
     const syncFields = () => { ED.date = $('#edDate').value; ED.merchant = $('#edMerchant').value; ED.memo = $('#edMemo').value; };
     $('#edClose').onclick = closeEditor;
@@ -504,7 +574,7 @@
       if (!amt) { toast('금액을 입력해 주세요'); return; }
       if (!ED.cat) { toast('카테고리를 골라 주세요'); return; }
       const t = now();
-      const rec = { date: ED.date || todayStr(), time: ED.time || '', merchant: ED.merchant.trim(), memo: (ED.memo || '').trim(), amount: ED.neg ? -amt : amt, cat: ED.cat, sub: ED.sub, method: ED.method, updatedAt: t };
+      const rec = { date: ED.date || todayStr(), time: ED.time || '', merchant: ED.merchant.trim(), memo: (ED.memo || '').trim(), amount: ED.neg ? -amt : amt, cat: ED.cat, sub: ED.sub, method: ED.method, pending: false, updatedAt: t };
       if (ED.isNew) S.tx.push(Object.assign({ id: uid(), createdAt: t, source: 'manual' }, rec));
       else Object.assign(S.tx.find(x => x.id === ED.id), rec);
       const rc = $('#edRule');
@@ -512,6 +582,7 @@
       const wasNew = ED.isNew;
       persist(); closeEditor(); render(); toast(wasNew ? '저장했어요' : '수정했어요');
     };
+    const cf = $('#edConfirm'); if (cf) cf.onclick = () => $('#edSave').click();
     const del = $('#edDel');
     if (del) { let armed = false; del.onclick = () => { if (!armed) { armed = true; del.textContent = '한 번 더 눌러 삭제'; return; } const x = S.tx.find(t => t.id === ED.id); x.deleted = true; x.updatedAt = now(); persist(); closeEditor(); render(); toast('삭제했어요'); }; }
   }
@@ -549,12 +620,14 @@
     const keys = new Set(S.tx.filter(t => t.importKey).map(t => t.importKey));
     ir.rows.forEach(r => { r.dup = keys.has(r.key); });
     const fresh = ir.rows.filter(r => !r.dup);
+    const usedM = new Set(); fresh.forEach(r => { const m = findRecurringMatch(r, usedM); r.match = m ? m.id : null; if (m) usedM.add(m.id); });
+    const nMatch = fresh.filter(r => r.match).length;
     const unc = fresh.filter(r => !r.cat).length;
     const range = ir.rows.length ? ir.rows.map(r => r.date).sort() : [];
     el.innerHTML = `
       <div class="card" style="display:grid;gap:8px">
         <b>${esc(ir.file)} · ${ir.label}</b>
-        <span class="small muted">${range.length ? range[0] + ' ~ ' + range[range.length - 1] : ''} · 전체 ${ir.rows.length}건 · <b style="color:var(--fg)">새 내역 ${fresh.length}건</b> · 중복 ${ir.rows.length - fresh.length}건 · 미분류 ${unc}건</span>
+        <span class="small muted">${range.length ? range[0] + ' ~ ' + range[range.length - 1] : ''} · 전체 ${ir.rows.length}건 · <b style="color:var(--fg)">새 내역 ${fresh.length}건</b> · 중복 ${ir.rows.length - fresh.length}건 · 미분류 ${unc}건${nMatch ? ` · <b style="color:var(--fg)">반복 기록과 맞춤 ${nMatch}건</b> (실제 금액으로 확정)` : ''}</span>
         <label class="field"><span class="lab">이 파일의 결제수단</span><select id="impMethod">${S.methods.filter(m => !m.deleted).map(m => `<option value="${m.id}" ${m.id === ir.method ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
         <div class="btns"><button class="btn" id="impGo" ${fresh.length ? '' : 'disabled'}>새 내역 ${fresh.length}건 가져오기</button><button class="btn ghost" id="impCancel">취소</button></div>
       </div>
@@ -565,12 +638,16 @@
     $('#impCancel', el).onclick = () => { UI.importRows = null; renderImport(); };
     $('#impGo', el).onclick = () => {
       const t = now();
-      fresh.forEach(r => S.tx.push({ id: uid(), createdAt: t, updatedAt: t, source: ir.kind, importKey: r.key, date: r.date, time: r.time, merchant: r.merchant, memo: r.memo || '', amount: r.amount, cat: r.cat, sub: r.sub, method: ir.method }));
+      fresh.forEach(r => {
+        const m = r.match && S.tx.find(x => x.id === r.match);
+        if (m) Object.assign(m, { importKey: r.key, date: r.date, time: r.time, amount: r.amount, memo: r.merchant !== m.merchant ? r.merchant : m.memo, pending: false, updatedAt: t });
+        else S.tx.push({ id: uid(), createdAt: t, updatedAt: t, source: ir.kind, importKey: r.key, date: r.date, time: r.time, merchant: r.merchant, memo: r.memo || '', amount: r.amount, cat: r.cat, sub: r.sub, method: ir.method });
+      });
       persist(); UI.importRows = null;
       const months = fresh.map(r => r.date).sort();
-      toast(fresh.length + '건 가져왔어요' + (unc ? ' · 미분류 ' + unc + '건' : ''));
+      toast((fresh.length - nMatch) + '건 가져왔어요' + (nMatch ? ' · 반복 기록 ' + nMatch + '건 확정' : '') + (unc ? ' · 미분류 ' + unc + '건' : ''));
       if (months.length) UI.ym = ymFor(months[months.length - 1]);
-      go(unc ? 'list' : 'home', unc ? 'unc' : null);
+      generateRecurring(); go(unc ? 'list' : 'home', unc ? 'unc' : null);
     };
   }
   function ymFor(date) { const sd = parseInt(S.settings.startDay, 10) || 1; const d = new Date(date); if (d.getDate() < sd) d.setMonth(d.getMonth() - 1); return d.getFullYear() + '-' + pad(d.getMonth() + 1); }
@@ -602,6 +679,20 @@
       ${groups.map(g => `<div class="card set"><b class="small" style="display:flex;gap:6px;align-items:center"><span class="dot" style="background:${GROUPS[g].color}"></span>${GROUPS[g].name}</b>
         ${catsOf([g]).map(c => `<div class="set-row"><span>${esc(c.name)}</span><input inputmode="numeric" data-budget="${c.id}" value="${won(c.budget)}" aria-label="${esc(c.name)} 예산"></div>`).join('')}</div>`).join('')}
 
+      <h2>반복 기록 <span class="muted small" style="font-weight:400">매월 그 날짜가 되면 자동 기록</span></h2>
+      <div class="card set">
+        <div class="small muted">확정: 정한 금액 그대로 기록 · 예정: 지난달 금액으로 기록하고 "확인 필요"로 표시 (실제 금액으로 고치거나 엑셀을 가져오면 확정)</div>
+        ${(S.recurring || []).filter(r => !r.deleted).sort((a, b) => a.day - b.day).map(r => `<div class="set-row" style="flex-wrap:wrap">
+          <span style="flex:1 1 140px;min-width:0"><b style="font-weight:500">${esc(r.name)}</b> <span class="muted small">매월 ${r.day}일 · ${esc(cat(r.cat) ? cat(r.cat).name : '?')}</span></span>
+          <select data-rmode="${r.id}" class="search" style="width:auto;padding:5px 8px"><option value="fixed" ${r.mode === 'fixed' ? 'selected' : ''}>확정</option><option value="estimate" ${r.mode === 'estimate' ? 'selected' : ''}>예정</option><option value="off" ${!r.active ? 'selected' : ''}>중지</option></select>
+          <input inputmode="numeric" data-ramt="${r.id}" value="${won(r.amount)}" aria-label="${esc(r.name)} 금액">
+          <button data-rcdel="${r.id}" style="background:none;border:0;color:var(--bad);font-size:13px">삭제</button></div>`).join('')}
+        <div class="row2"><input class="search" id="rcName" placeholder="이름 (예: 넷플릭스)"><select class="search" id="rcCat">${S.cats.filter(c => !c.deleted).sort((a, b) => a.order - b.order).map(c => `<option value="${c.id}">${GROUPS[c.group].name} · ${esc(c.name)}</option>`).join('')}</select></div>
+        <div class="row2"><input class="search" id="rcAmt" inputmode="numeric" placeholder="금액"><input class="search" id="rcDay" inputmode="numeric" placeholder="매월 며칠 (1~31)"></div>
+        <div class="row2"><select class="search" id="rcMode"><option value="fixed">확정 (금액 고정)</option><option value="estimate">예정 (매달 확인)</option></select><select class="search" id="rcMethod">${S.methods.filter(m => !m.deleted).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select></div>
+        <button class="btn ghost" id="rcAdd">반복 기록 추가</button>
+      </div>
+
       <h2>기본 설정</h2>
       <div class="card set">
         <div class="set-row"><span>예산 시작일 <span class="muted small">(매월)</span></span><input inputmode="numeric" id="startDay" value="${S.settings.startDay}"></div>
@@ -629,11 +720,20 @@
         <div class="btns"><button class="btn ghost" id="exp">JSON으로 내보내기</button><label class="btn ghost" for="impJson">JSON 불러오기</label><input type="file" id="impJson" accept=".json" hidden></div>
         <button class="btn danger" id="wipe">이 기기의 데이터 모두 지우기</button>
       </div>
-      <p class="small muted" style="text-align:center">살림장부 v1 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
+      <p class="small muted" style="text-align:center">Moneta v2 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
     `;
     const numIn = (inp, fn) => { inp.onchange = () => { const v = Number(inp.value.replace(/[^\d-]/g, '')) || 0; fn(v); inp.value = won(v); persist(); }; };
     $$('[data-budget]', el).forEach(inp => numIn(inp, v => { const c = cat(inp.dataset.budget); c.budget = v; c.updatedAt = now(); renderSettings(); }));
     $$('[data-open]', el).forEach(inp => numIn(inp, v => { S.settings.reserveOpening = Object.assign({}, S.settings.reserveOpening, { [inp.dataset.open]: v }); S.settings.updatedAt = now(); }));
+    $$('[data-rmode]', el).forEach(sel => sel.onchange = () => { const r = S.recurring.find(x => x.id === sel.dataset.rmode); if (sel.value === 'off') r.active = false; else { r.active = true; r.mode = sel.value; } r.updatedAt = now(); persist(); generateRecurring(); });
+    $$('[data-ramt]', el).forEach(inp => numIn(inp, v => { const r = S.recurring.find(x => x.id === inp.dataset.ramt); r.amount = v; r.updatedAt = now(); }));
+    $$('[data-rcdel]', el).forEach(b => b.onclick = () => { const r = S.recurring.find(x => x.id === b.dataset.rcdel); r.deleted = true; r.updatedAt = now(); persist(); renderSettings(); toast('반복 기록을 삭제했어요 (이미 기록된 내역은 남아요)'); });
+    $('#rcAdd', el).onclick = () => {
+      const name = $('#rcName').value.trim(), amount = Number($('#rcAmt').value.replace(/[^\d]/g, '')) || 0, day = Math.min(Math.max(parseInt($('#rcDay').value, 10) || 0, 0), 31);
+      if (!name || !amount || !day) { toast('이름·금액·날짜를 입력해 주세요'); return; }
+      S.recurring.push({ id: 'rc_' + uid(), name, cat: $('#rcCat').value, sub: '', amount, day, method: $('#rcMethod').value, mode: $('#rcMode').value, active: true, startYm: todayStr().slice(0, 7), updatedAt: now() });
+      persist(); generateRecurring(); renderSettings(); toast('추가했어요');
+    };
     $('#startDay', el).onchange = e => { S.settings.startDay = Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 28); e.target.value = S.settings.startDay; S.settings.updatedAt = now(); UI.ym = curYm(); persist(); updateMonth(); };
     $('#myName', el).onchange = e => { S.settings.myName = e.target.value.trim(); S.settings.updatedAt = now(); persist(); };
     $('#resStart', el).onchange = e => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { S.settings.reserveStart = e.target.value; S.settings.updatedAt = now(); persist(); } else toast('2026-11 형식으로 입력해 주세요'); };
@@ -646,12 +746,12 @@
     $('#mAdd', el).onclick = () => { const n = $('#mNew').value.trim(); if (!n) return; S.methods.push({ id: 'm_' + uid(), name: n, kind: $('#mKind').value, order: S.methods.length, updatedAt: now() }); persist(); renderSettings(); };
     $('#exp', el).onclick = () => {
       const blob = new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' });
-      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'salim-backup-' + todayStr() + '.json'; document.body.appendChild(a); a.click(); a.remove();
+      const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'moneta-backup-' + todayStr() + '.json'; document.body.appendChild(a); a.click(); a.remove();
     };
     $('#impJson', el).onchange = async e => {
       const f = e.target.files[0]; if (!f) return;
       try { const data = JSON.parse(await f.text()); if (!data.tx || !data.cats) throw new Error(); S = merge(S, data); persist(); render(); toast('백업을 합쳤어요'); }
-      catch (err) { toast('살림장부 백업 파일이 아니에요'); }
+      catch (err) { toast('Moneta 백업 파일이 아니에요'); }
     };
     let wipeArmed = false;
     $('#wipe', el).onclick = async () => {
@@ -670,7 +770,7 @@
   function merge(a, b) {
     return {
       v: 1,
-      cats: mergeList(a.cats, b.cats), methods: mergeList(a.methods, b.methods), rules: mergeList(a.rules, b.rules), tx: mergeList(a.tx, b.tx),
+      cats: mergeList(a.cats, b.cats), methods: mergeList(a.methods, b.methods), rules: mergeList(a.rules, b.rules), tx: mergeList(a.tx, b.tx), recurring: mergeList(a.recurring, b.recurring),
       settings: (b.settings && (b.settings.updatedAt || 0) > (a.settings.updatedAt || 0)) ? b.settings : a.settings
     };
   }
@@ -719,7 +819,7 @@
           const remote = await (await this.api('https://www.googleapis.com/drive/v3/files/' + this.fileId + '?alt=media')).json();
           merged = merge(S, remote);
         }
-        S = merged; await kvSet('state', S);
+        S = merged; generateRecurring(); await kvSet('state', S);
         const body = JSON.stringify(S);
         if (this.fileId) {
           await this.api('https://www.googleapis.com/upload/drive/v3/files/' + this.fileId + '?uploadType=media', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body });
@@ -774,6 +874,7 @@
 
   async function init() {
     await load();
+    generateRecurring();
     UI.ym = curYm();
     document.addEventListener('click', e => {
       const g = e.target.closest('[data-go]'); if (g) { go(g.dataset.go, g.dataset.filter || null); }
@@ -785,7 +886,7 @@
     $('#prevM').onclick = () => { UI.ym = shiftYm(UI.ym, -1); render(); };
     $('#nextM').onclick = () => { UI.ym = shiftYm(UI.ym, 1); render(); };
     $('#syncBtn').onclick = () => Sync.run(true);
-    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') Sync.auto(); });
+    document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { if (generateRecurring()) render(); Sync.auto(); } });
     setInterval(() => { if (document.visibilityState === 'visible') Sync.auto(); }, 60000);
     Sync.status(L.everConnected ? '연결 필요' : '로컬');
     go('home');
