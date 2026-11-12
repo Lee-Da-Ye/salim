@@ -358,11 +358,16 @@
   function reserveBalance(cid) {
     const c = cat(cid); if (!c) return 0;
     const start = S.settings.reserveStart || todayStr().slice(0, 7);
-    const months = Math.max(0, (Number(curYm().slice(0, 4)) - Number(start.slice(0, 4))) * 12 + Number(curYm().slice(5)) - Number(start.slice(5)) + 1);
+    // 적립일(기본 21일)이 지난 달만 적립된 것으로 계산 (달력 기준 월)
+    const today = todayStr(), thisYm = today.slice(0, 7), day = reserveDay();
+    let months = 0;
+    for (let ym = start; ym <= thisYm; ym = shiftYm(ym, 1)) { if (ym < thisYm || Number(today.slice(8)) >= day) months++; }
     const p0 = period(start);
     const used = liveTx().filter(t => t.cat === cid && t.date >= p0.start).reduce((s, t) => s + t.amount, 0);
     return (Number((S.settings.reserveOpening || {})[cid]) || 0) + months * (c.budget || 0) - used;
   }
+  function reserveDay() { return Math.min(Math.max(parseInt(S.settings.reserveDay, 10) || 21, 1), 31); }
+  function reservedThisMonth() { return todayStr().slice(0, 7) >= (S.settings.reserveStart || '') && Number(todayStr().slice(8)) >= reserveDay(); }
   function stateOf(spent, budget, pacePct) {
     if (!budget) return 'ok';
     const r = spent / budget;
@@ -466,7 +471,7 @@
         const bal = reserveBalance(c.id), used = st.byCat[c.id] || 0, subs = subBreakdown(st, c.id);
         return `<div class="res" style="${i ? 'border-top:1px solid var(--line);padding-top:12px;margin-top:4px' : ''}">
           <div class="res-h"><b>${esc(c.name)} 통장</b><span class="num" style="font-size:20px;font-weight:600;${bal < 0 ? 'color:var(--bad)' : ''}">${won(bal)}<span class="muted" style="font-size:13px"> 원</span></span></div>
-          <div class="res-r"><span>이번 달 적립</span><span class="num" style="color:var(--g-income)">+${won(c.budget)}</span></div>
+          <div class="res-r"><span>이번 달 적립</span>${reservedThisMonth() ? `<span class="num" style="color:var(--g-income)">+${won(c.budget)}</span>` : `<span class="num">${reserveDay()}일 예정 (+${won(c.budget)})</span>`}</div>
           <div class="res-r"><span>이번 달 사용</span><span class="num">${used ? '−' + won(used) : '0'}</span></div>
           ${subs ? `<span class="sub">${subs}</span>` : ''}
         </div>`;
@@ -728,6 +733,7 @@
         <div class="set-row"><span>예산 시작일 <span class="muted small">(매월)</span></span><input inputmode="numeric" id="startDay" value="${S.settings.startDay}"></div>
         <div class="set-row"><span>내 이름 <span class="muted small">(본인 이체 구분)</span></span><input id="myName" value="${esc(S.settings.myName)}" style="font-family:var(--sans)"></div>
         <div class="set-row"><span>적립 시작 월</span><input id="resStart" value="${esc(S.settings.reserveStart)}" placeholder="2026-11"></div>
+        <div class="set-row"><span>매월 적립일</span><input inputmode="numeric" id="resDay" value="${reserveDay()}"></div>
         ${catsOf(['reserve']).map(c => `<div class="set-row"><span>${esc(c.name)} 시작 잔액</span><input inputmode="numeric" data-open="${c.id}" value="${won((S.settings.reserveOpening || {})[c.id] || 0)}"></div>`).join('')}
       </div>
 
@@ -766,6 +772,7 @@
     };
     $('#startDay', el).onchange = e => { S.settings.startDay = Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 28); e.target.value = S.settings.startDay; S.settings.updatedAt = now(); UI.ym = curYm(); persist(); updateMonth(); };
     $('#myName', el).onchange = e => { S.settings.myName = e.target.value.trim(); S.settings.updatedAt = now(); persist(); };
+    $('#resDay', el).onchange = e => { S.settings.reserveDay = Math.min(Math.max(parseInt(e.target.value, 10) || 21, 1), 31); e.target.value = S.settings.reserveDay; S.settings.updatedAt = now(); persist(); };
     $('#resStart', el).onchange = e => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { S.settings.reserveStart = e.target.value; S.settings.updatedAt = now(); persist(); } else toast('2026-11 형식으로 입력해 주세요'); };
     $('#clientId', el).onchange = e => { L.clientId = e.target.value.trim(); saveLocal(); };
     $('#syncNow', el).onclick = () => { L.clientId = $('#clientId').value.trim(); saveLocal(); Sync.run(true); };
