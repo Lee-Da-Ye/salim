@@ -151,7 +151,7 @@
   // ---------- 상태 ----------
   let S = null;      // 동기화되는 데이터
   let L = null;      // 이 기기에만 있는 설정
-  const UI = { tab: 'home', ym: null, filter: 'all', q: '', importRows: null };
+  const UI = { tab: 'home', ym: null, filter: 'all', q: '', importRows: null, page: 0 };
 
   function freshState() {
     const t = now();
@@ -385,8 +385,9 @@
         <b>아직 기록이 없어요</b>
         <p>아래 <b>+</b> 버튼으로 바로 입력하거나, 카드·통장 엑셀을 가져와서 시작하세요.</p>
         <div class="btns"><button class="btn" data-go="import">엑셀 가져오기</button><button class="btn ghost" id="loadSample">예시 데이터로 둘러보기</button></div>
-      </div>` + budgetOverview(st, pace);
+      </div>` + pager(st, pace);
       $('#loadSample', el).onclick = loadSample;
+      bindPager(el);
       return;
     }
 
@@ -419,31 +420,59 @@
       </div>
       ${pend.length ? `<button class="card" data-go="list" data-filter="pending" style="text-align:left;border-color:var(--warn);color:var(--warn)">금액 확인 필요 ${pend.length}건 (예정 ${won(pend.reduce((s, t) => s + t.amount, 0))}원) — 눌러서 실제 금액으로 확정</button>` : ''}
       ${unc ? `<button class="card" data-go="list" data-filter="unc" style="text-align:left;border-color:var(--warn);color:var(--warn)">미분류 ${unc}건 — 눌러서 분류하기</button>` : ''}
-      ${budgetOverview(st, pace)}
-      ${reserveCard()}
-      ${topMerchants(st)}
+      ${pager(st, pace)}
     `;
     const cs = $('#clearSample', el); if (cs) cs.onclick = clearSample;
+    bindPager(el);
   }
 
-  function budgetOverview(st, pace) {
-    let html = '';
-    for (const g of ['living', 'fixed', 'reserve', 'saving']) {
-      const cs = catsOf([g]);
-      const b = cs.reduce((s, c) => s + (c.budget || 0), 0);
-      const sp = cs.reduce((s, c) => s + (st.byCat[c.id] || 0), 0);
-      html += `<div class="card grp">
-        <div class="grp-h"><b><span class="dot" style="background:${GROUPS[g].color}"></span>${GROUPS[g].name}</b><span class="num muted">${won(sp)} / ${won(b)}</span></div>
-        ${cs.map(c => {
-          const v = st.byCat[c.id] || 0; const s = g === 'saving' ? (v >= c.budget ? 'ok' : 'ok') : stateOf(v, c.budget, g === 'fixed' ? 1 : pace);
-          const subs = subBreakdown(st, c.id);
-          return `<div class="brow"><span class="nm">${esc(c.name)}</span><span class="am">${won(v)} <span class="muted">/ ${won(c.budget)}</span></span>
-            <div class="meter ${s}"><i style="width:${Math.min(v / (c.budget || 1), 1) * 100}%;background:${s === 'ok' ? GROUPS[g].color : ''}"></i></div>
-            ${subs ? `<span class="sub">${subs}</span>` : ''}</div>`;
-        }).join('')}
-      </div>`;
-    }
-    return html;
+  // 예산 탭 아래쪽: 탭 + 좌우 스와이프 카드
+  const PAGES = [['living', '생활비'], ['fixed', '고정지출'], ['reserve', '적립 통장'], ['saving', '저축·투자'], ['top', '많이 쓴 곳']];
+  function pager(st, pace) {
+    const idx = Math.min(UI.page || 0, PAGES.length - 1);
+    return `<div class="pg-tabs" role="tablist">${PAGES.map(([k, n], i) => `<button role="tab" data-pg="${i}" class="${i === idx ? 'on' : ''}">${n}</button>`).join('')}</div>
+      <div class="pager" id="pager">${PAGES.map(([k]) => `<div class="page">${k === 'top' ? topMerchants(st) : k === 'reserve' ? reservePage(st) : groupPage(st, k, pace)}</div>`).join('')}</div>`;
+  }
+  function bindPager(el) {
+    const pg = $('#pager', el); if (!pg) return;
+    const step = () => pg.clientWidth + 12;
+    pg.scrollLeft = (UI.page || 0) * step();
+    const mark = i => $$('[data-pg]', el).forEach(b => b.classList.toggle('on', +b.dataset.pg === i));
+    $$('[data-pg]', el).forEach(b => b.onclick = () => { UI.page = +b.dataset.pg; mark(UI.page); pg.scrollTo({ left: UI.page * step(), behavior: 'smooth' }); });
+    let t; pg.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(() => { const i = Math.round(pg.scrollLeft / step()); if (i !== UI.page) { UI.page = i; mark(i); } }, 60); }, { passive: true });
+  }
+  function groupPage(st, g, pace) {
+    const cs = catsOf([g]);
+    const b = cs.reduce((s, c) => s + (c.budget || 0), 0);
+    const sp = cs.reduce((s, c) => s + (st.byCat[c.id] || 0), 0);
+    const head = { living: ['쓴 돈', '예산'], fixed: ['나간 돈', '예상'], saving: ['넣은 돈', '목표'] }[g];
+    return `<div class="card grp">
+      <div class="grp-h"><b><span class="dot" style="background:${GROUPS[g].color}"></span>${head[0]} / ${head[1]}</b><span class="num muted">${won(sp)} / ${won(b)}</span></div>
+      ${cs.map(c => {
+        const v = st.byCat[c.id] || 0;
+        const s = g === 'saving' ? 'ok' : stateOf(v, c.budget, g === 'fixed' ? 1 : pace);
+        const subs = subBreakdown(st, c.id);
+        const done = (g === 'fixed' || g === 'saving') && c.budget && v >= c.budget * 0.9 ? ' <span class="chip ok" style="padding:0 6px">완료</span>' : '';
+        return `<div class="brow"><span class="nm">${esc(c.name)}${done}</span><span class="am">${won(v)} <span class="muted">/ ${won(c.budget)}</span></span>
+          <div class="meter ${s}"><i style="width:${Math.min(v / (c.budget || 1), 1) * 100}%;background:${s === 'ok' ? GROUPS[g].color : ''}"></i></div>
+          ${subs && g === 'living' ? `<span class="sub">${subs}</span>` : ''}</div>`;
+      }).join('')}
+    </div>`;
+  }
+  function reservePage(st) {
+    const cs = catsOf(['reserve']);
+    return `<div class="card grp">
+      ${cs.map((c, i) => {
+        const bal = reserveBalance(c.id), used = st.byCat[c.id] || 0, subs = subBreakdown(st, c.id);
+        return `<div class="res" style="${i ? 'border-top:1px solid var(--line);padding-top:12px;margin-top:4px' : ''}">
+          <div class="res-h"><b>${esc(c.name)} 통장</b><span class="num" style="font-size:20px;font-weight:600;${bal < 0 ? 'color:var(--bad)' : ''}">${won(bal)}<span class="muted" style="font-size:13px"> 원</span></span></div>
+          <div class="res-r"><span>이번 달 적립</span><span class="num" style="color:var(--g-income)">+${won(c.budget)}</span></div>
+          <div class="res-r"><span>이번 달 사용</span><span class="num">${used ? '−' + won(used) : '0'}</span></div>
+          ${subs ? `<span class="sub">${subs}</span>` : ''}
+        </div>`;
+      }).join('')}
+      <p class="small muted" style="margin:10px 0 0">통장 잔액 = 시작 잔액 + 매달 적립액 − 쓴 돈 (${esc(S.settings.reserveStart)}부터 · 시작 잔액은 설정에서)</p>
+    </div>`;
   }
   function subBreakdown(st, cid) {
     const m = {};
