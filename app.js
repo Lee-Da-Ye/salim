@@ -515,7 +515,7 @@
     ED = tx ? Object.assign({}, tx, { type: typeOfCat(tx.cat), amtStr: String(Math.abs(tx.amount)), neg: tx.amount < 0 })
             : { id: null, type: 'expense', amtStr: '', date: todayStr(), time: '', merchant: '', memo: '', cat: '', sub: '', method: lastMethod('') };
     ED.isNew = isNew;
-    $('#sheet').hidden = false; $('#scrim').hidden = false;
+    $('#sheet').innerHTML = ''; $('#sheet').hidden = false; $('#scrim').hidden = false;
     renderEditor();
     document.body.style.overflow = 'hidden';
   }
@@ -535,6 +535,7 @@
   }
   function renderEditor() {
     const sh = $('#sheet');
+    const prevBody = $('.sheet-b', sh); const keepScroll = prevBody ? prevBody.scrollTop : 0;
     const groups = TYPE_GROUPS[ED.type];
     const cs = catsOf(groups);
     const c = cat(ED.cat);
@@ -550,7 +551,7 @@
         <div class="keypad">${['1', '2', '3', '4', '5', '6', '7', '8', '9', '00', '0', '⌫'].map(k => `<button data-k="${k}" aria-label="${k === '⌫' ? '지우기' : k}">${k}</button>`).join('')}</div>
         <div><span class="lab">카테고리</span><div class="catgrid">${cs.map(x => `<button data-cat="${x.id}" class="${ED.cat === x.id ? 'on' : ''}"><span class="dot" style="background:${GROUPS[x.group].color}"></span><span>${esc(x.name)}</span></button>`).join('')}</div></div>
         ${c && c.subs && c.subs.length ? `<div><span class="lab">세부</span><div class="chips">${c.subs.map(s => `<button data-sub="${esc(s)}" class="${ED.sub === s ? 'on' : ''}">${esc(s)}</button>`).join('')}</div></div>` : ''}
-        <div><span class="lab">결제수단</span><div class="chips">${S.methods.filter(m => !m.deleted).sort((a, b) => a.order - b.order).map(m => `<button data-m="${m.id}" class="${ED.method === m.id ? 'on' : ''}">${esc(m.name)}</button>`).join('')}</div></div>
+        <label class="field"><span class="lab">결제수단</span><select id="edMethod">${S.methods.filter(m => !m.deleted).sort((a, b) => a.order - b.order).map(m => `<option value="${m.id}" ${ED.method === m.id ? 'selected' : ''}>${esc(m.name)}</option>`).join('')}</select></label>
         <div class="row2"><label class="field"><span class="lab">날짜</span><input type="date" id="edDate" value="${ED.date}"></label>
           <label class="field"><span class="lab">사용처</span><input id="edMerchant" value="${esc(ED.merchant)}" placeholder="예: 스타벅스" autocomplete="off"></label></div>
         <label class="field"><span class="lab">메모</span><input id="edMemo" value="${esc(ED.memo || '')}" placeholder="선택"></label>
@@ -558,7 +559,8 @@
       </div>
       <div class="sheet-f">${ED.isNew ? '' : '<button class="btn danger" id="edDel" style="flex:0 0 auto">삭제</button>'}${ED.pending ? '<button class="btn ghost" id="edConfirm">이 금액으로 확정</button>' : ''}<button class="btn" id="edSave">저장</button></div>
     </div>`;
-    const syncFields = () => { ED.date = $('#edDate').value; ED.merchant = $('#edMerchant').value; ED.memo = $('#edMemo').value; };
+    $('.sheet-b', sh).scrollTop = keepScroll;
+    const syncFields = () => { ED.date = $('#edDate').value; ED.merchant = $('#edMerchant').value; ED.memo = $('#edMemo').value; ED.method = $('#edMethod').value; };
     $('#edClose').onclick = closeEditor;
     $$('[data-type]', sh).forEach(b => b.onclick = () => { syncFields(); ED.type = b.dataset.type; if (typeOfCat(ED.cat) !== ED.type) { ED.cat = ''; ED.sub = ''; } renderEditor(); });
     $$('[data-tm]', sh).forEach(b => b.onclick = () => { const t = tm[+b.dataset.tm]; syncFields(); Object.assign(ED, { merchant: t.merchant, cat: t.cat, sub: t.sub || '', method: t.method }); renderEditor(); });
@@ -567,7 +569,6 @@
     $$('[data-neg]', sh).forEach(b => b.onclick = () => { syncFields(); ED.neg = !ED.neg; renderEditor(); });
     $$('[data-cat]', sh).forEach(b => b.onclick = () => { syncFields(); ED.cat = b.dataset.cat; const cc = cat(ED.cat); if (!cc.subs.includes(ED.sub)) ED.sub = ''; if (ED.isNew) ED.method = lastMethod(ED.cat); renderEditor(); });
     $$('[data-sub]', sh).forEach(b => b.onclick = () => { syncFields(); ED.sub = ED.sub === b.dataset.sub ? '' : b.dataset.sub; renderEditor(); });
-    $$('[data-m]', sh).forEach(b => b.onclick = () => { syncFields(); ED.method = b.dataset.m; renderEditor(); });
     $('#edSave').onclick = () => {
       syncFields();
       const amt = Number(ED.amtStr) || 0;
@@ -785,22 +786,22 @@
     },
     async getToken(interactive) {
       if (this.token && Date.now() < this.exp - 60000) return this.token;
-      try { const c = JSON.parse(sessionStorage.getItem('salim-token') || 'null'); if (c && Date.now() < c.exp - 60000) { this.token = c.t; this.exp = c.exp; return this.token; } } catch (e) {}
+      try { const c = JSON.parse(localStorage.getItem('salim-token') || 'null'); if (c && Date.now() < c.exp - 60000) { this.token = c.t; this.exp = c.exp; return this.token; } } catch (e) {}
       if (!interactive) return null;
       if (!L.clientId) throw new Error('설정에서 OAuth 클라이언트 ID를 먼저 입력해 주세요');
       await this.loadGis();
       return new Promise((res, rej) => {
         const tc = google.accounts.oauth2.initTokenClient({
-          client_id: L.clientId, scope: 'https://www.googleapis.com/auth/drive.appdata',
-          callback: r => { if (r.error) return rej(new Error(r.error)); this.token = r.access_token; this.exp = Date.now() + (r.expires_in || 3600) * 1000; try { sessionStorage.setItem('salim-token', JSON.stringify({ t: this.token, exp: this.exp })); } catch (e) {} res(this.token); },
+          client_id: L.clientId, scope: 'openid email https://www.googleapis.com/auth/drive.appdata',
+          callback: r => { if (r.error) return rej(new Error(r.error)); this.token = r.access_token; this.exp = Date.now() + (r.expires_in || 3600) * 1000; try { localStorage.setItem('salim-token', JSON.stringify({ t: this.token, exp: this.exp })); } catch (e) {} if (!L.email) fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + this.token } }).then(x => x.json()).then(u => { if (u.email) { L.email = u.email; saveLocal(); } }).catch(() => {}); res(this.token); },
           error_callback: e => rej(new Error(e && e.type === 'popup_closed' ? '로그인 창이 닫혔어요' : '로그인하지 못했어요'))
         });
-        tc.requestAccessToken({ prompt: L.everConnected ? '' : 'consent' });
+        tc.requestAccessToken(Object.assign({ prompt: L.everConnected ? '' : 'consent' }, L.email ? { login_hint: L.email, hint: L.email } : {}));
       });
     },
     async api(url, opt = {}) {
       const r = await fetch(url, Object.assign({}, opt, { headers: Object.assign({ Authorization: 'Bearer ' + this.token }, opt.headers || {}) }));
-      if (r.status === 401) { this.token = null; try { sessionStorage.removeItem('salim-token'); } catch (e) {} throw new Error('로그인이 만료됐어요. 다시 연결해 주세요'); }
+      if (r.status === 401) { this.token = null; try { localStorage.removeItem('salim-token'); } catch (e) {} throw new Error('로그인이 만료됐어요. 다시 연결해 주세요'); }
       if (!r.ok) throw new Error('드라이브 오류 ' + r.status);
       return r;
     },
@@ -808,7 +809,7 @@
       if (this.busy) return; this.busy = true; this.status('동기화 중…');
       try {
         const tk = await this.getToken(interactive);
-        if (!tk) { this.status(L.clientId ? '연결 필요' : '로컬', ''); return; }
+        if (!tk) { this.status(L.everConnected ? '탭해서 동기화' : L.clientId ? '연결 필요' : '로컬', ''); return; }
         if (!this.fileId) {
           const q = encodeURIComponent("name='salim-ledger.json'");
           const r = await (await this.api('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,modifiedTime)&q=' + q)).json();
@@ -838,7 +839,7 @@
       } finally { this.busy = false; }
     },
     auto() { if (this.token || L.everConnected) this.run(false); },
-    signOut() { try { if (this.token && window.google) google.accounts.oauth2.revoke(this.token); } catch (e) {} this.token = null; this.fileId = null; L.everConnected = false; saveLocal(); try { sessionStorage.removeItem('salim-token'); } catch (e) {} this.status('로컬'); }
+    signOut() { try { if (this.token && window.google) google.accounts.oauth2.revoke(this.token); } catch (e) {} this.token = null; this.fileId = null; L.everConnected = false; saveLocal(); try { localStorage.removeItem('salim-token'); } catch (e) {} this.status('로컬'); }
   };
 
   // ---------- 예시 데이터 ----------
@@ -888,7 +889,7 @@
     $('#syncBtn').onclick = () => Sync.run(true);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { if (generateRecurring()) render(); Sync.auto(); } });
     setInterval(() => { if (document.visibilityState === 'visible') Sync.auto(); }, 60000);
-    Sync.status(L.everConnected ? '연결 필요' : '로컬');
+    Sync.status(L.everConnected ? '탭해서 동기화' : '로컬');
     go('home');
     Sync.auto();
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
