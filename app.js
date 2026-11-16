@@ -169,6 +169,8 @@
   async function load() {
     S = (await kvGet('state')) || freshState();
     L = (await kvGet('local')) || { deviceId: uid(), clientId: '', lastSync: 0 };
+    if (!L.clientId && window.MONETA_CONFIG && MONETA_CONFIG.clientId) L.clientId = MONETA_CONFIG.clientId;
+    UI.freshDevice = !(await kvGet('state'));
     // 새 기본 카테고리가 추가된 경우 보충
     if (!S.recurring) S.recurring = defaultRecurring(todayStr().slice(0, 7));
     const have = new Set(S.cats.map(c => c.id));
@@ -366,6 +368,19 @@
     const used = liveTx().filter(t => t.cat === cid && t.date >= p0.start).reduce((s, t) => s + t.amount, 0);
     return (Number((S.settings.reserveOpening || {})[cid]) || 0) + months * (c.budget || 0) - used;
   }
+  // 생활비 이월: 시작 월부터 지난달까지 (예산 − 쓴 돈)을 누적. 설정에서 끌 수 있음
+  function livingCarry(ym) {
+    if (S.settings.carry === false) return 0;
+    const start = S.settings.carryStart || S.settings.reserveStart || ym;
+    const living = catsOf(['living']);
+    const base = living.reduce((s, c) => s + (c.budget || 0), 0);
+    let carry = 0;
+    for (let m = start; m < ym; m = shiftYm(m, 1)) {
+      const st = stats(m);
+      carry += base - living.reduce((s, c) => s + (st.byCat[c.id] || 0), 0);
+    }
+    return carry;
+  }
   function reserveDay() { return Math.min(Math.max(parseInt(S.settings.reserveDay, 10) || 21, 1), 31); }
   function reservedThisMonth() { return todayStr().slice(0, 7) >= (S.settings.reserveStart || '') && Number(todayStr().slice(8)) >= reserveDay(); }
   function stateOf(spent, budget, pacePct) {
@@ -387,17 +402,21 @@
 
     if (!liveTx().length) {
       el.innerHTML = `<div class="card empty">
+        ${L.clientId ? `<div class="banner" style="text-align:left">이전에 쓰던 데이터가 있다면 먼저 <b>구글 드라이브에서 불러오세요</b>. 새로 입력한 내역과 합쳐지니까 데이터가 지워지지 않아요.<br><button class="btn" id="restoreBtn" style="margin-top:8px">드라이브에서 불러오기</button></div>` : ''}
         <b>아직 기록이 없어요</b>
         <p>아래 <b>+</b> 버튼으로 바로 입력하거나, 카드·통장 엑셀을 가져와서 시작하세요.</p>
         <div class="btns"><button class="btn" data-go="import">엑셀 가져오기</button><button class="btn ghost" id="loadSample">예시 데이터로 둘러보기</button></div>
       </div>` + pager(st, pace);
       $('#loadSample', el).onclick = loadSample;
+      const rb = $('#restoreBtn', el); if (rb) rb.onclick = () => Sync.run(true);
       bindPager(el);
       return;
     }
 
     const living = catsOf(['living']);
-    const lBudget = living.reduce((s, c) => s + (c.budget || 0), 0);
+    const lBase = living.reduce((s, c) => s + (c.budget || 0), 0);
+    const carry = livingCarry(UI.ym);
+    const lBudget = lBase + carry;
     const lSpent = living.reduce((s, c) => s + (st.byCat[c.id] || 0), 0);
     const left = lBudget - lSpent;
     const fair = Math.round(lBudget * pace);
@@ -416,6 +435,7 @@
         <div class="big ${left < 0 ? '' : ''}" style="${left < 0 ? 'color:var(--bad)' : ''}">${won(left)}<span style="font-size:16px;color:var(--muted)"> 원</span></div>
         <div class="meter ${s}"><i style="width:${Math.min(lSpent / (lBudget || 1), 1) * 100}%"></i><b style="left:${Math.min(pace, 1) * 100}%"></b></div>
         <div class="row"><span>${won(lSpent)} / ${won(lBudget)}</span><span>오늘까지 적정 ${won(fair)}</span></div>
+        ${carry ? `<div class="row"><span>지난달 ${carry > 0 ? '남은 돈' : '초과분'} 이월</span><span class="num" style="color:${carry > 0 ? 'var(--g-income)' : 'var(--bad)'}">${carry > 0 ? '+' : '−'}${won(Math.abs(carry))}</span></div>` : ''}
         <div class="row"><span>${p.start.slice(5).replace('-', '.')} ~ ${p.end.slice(5).replace('-', '.')} · ${elapsed}/${p.days}일</span><span>${daysLeft > 0 ? '남은 날 하루 ' + won(perDay) + '원' : '기간 종료'}</span></div>
       </div>
       <div class="kpis">
@@ -503,6 +523,25 @@
   // ---------- 렌더: 내역 ----------
   function renderList() {
     const el = $('#view-list');
+    const fl = [['all', '전체'], ['pending', '확인 필요'], ['unc', '미분류'], ['living', '생활'], ['fixed', '고정'], ['reserve', '적립'], ['saving', '저축'], ['income', '수입'], ['transfer', '이체·제외']];
+    if (!$('#listBody', el)) {
+      el.innerHTML = `
+        <input class="search" id="q" type="search" placeholder="가맹점·메모·카테고리 검색" aria-label="검색" autocomplete="off">
+        <div class="filters">${fl.map(([k, n]) => `<button class="fchip" data-f="${k}">${n}</button>`).join('')}</div>
+        <div id="listBody" style="display:grid;gap:0"></div>`;
+      const q = $('#q', el);
+      q.value = UI.q;
+      let composing = false;
+      q.addEventListener('compositionstart', () => { composing = true; });
+      q.addEventListener('compositionend', () => { composing = false; UI.q = q.value; renderListBody(); });
+      q.addEventListener('input', () => { UI.q = q.value; if (!composing) renderListBody(); });
+      $$('.fchip', el).forEach(b => b.onclick = () => { UI.filter = b.dataset.f; renderList(); });
+    }
+    $$('.fchip', el).forEach(b => b.classList.toggle('on', b.dataset.f === UI.filter));
+    renderListBody();
+  }
+  function renderListBody() {
+    const body = $('#listBody'); if (!body) return;
     const st = stats(UI.ym);
     let txs = st.txs.slice();
     const f = UI.filter;
@@ -513,20 +552,13 @@
     txs.sort((a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')) || b.createdAt - a.createdAt);
     const days = {};
     txs.forEach(t => { (days[t.date] = days[t.date] || []).push(t); });
-    const fl = [['all', '전체'], ['pending', '확인 필요'], ['unc', '미분류'], ['living', '생활'], ['fixed', '고정'], ['reserve', '적립'], ['saving', '저축'], ['income', '수입'], ['transfer', '이체·제외']];
     const wd = ['일', '월', '화', '수', '목', '금', '토'];
-    el.innerHTML = `
-      <input class="search" id="q" type="search" placeholder="가맹점·메모·카테고리 검색" value="${esc(UI.q)}" aria-label="검색">
-      <div class="filters">${fl.map(([k, n]) => `<button class="fchip ${f === k ? 'on' : ''}" data-f="${k}">${n}</button>`).join('')}</div>
-      ${txs.length ? Object.keys(days).map(d => {
-        const sum = days[d].reduce((s, t) => { const c = cat(t.cat); return s + (!c || GROUPS[c.group].spend ? t.amount : 0); }, 0);
-        return `<div class="day"><div class="day-h"><span>${d.slice(5).replace('-', '.')} (${wd[new Date(d).getDay()]})</span><span class="num">${sum > 0 ? '-' + won(sum) : sum < 0 ? '+' + won(-sum) : ''}</span></div>
-          ${days[d].map(txRow).join('')}</div>`;
-      }).join('') : `<div class="card empty"><p>${f === 'unc' ? '미분류 내역이 없어요.' : f === 'pending' ? '확인할 예정 기록이 없어요.' : '이 기간에 내역이 없어요.'}</p></div>`}
-    `;
-    $('#q', el).oninput = e => { UI.q = e.target.value; const pos = e.target.selectionStart; renderList(); const q = $('#q'); q.focus(); q.setSelectionRange(pos, pos); };
-    $$('.fchip', el).forEach(b => b.onclick = () => { UI.filter = b.dataset.f; renderList(); });
-    $$('.tx', el).forEach(b => b.onclick = () => openEditor(S.tx.find(t => t.id === b.dataset.id)));
+    body.innerHTML = txs.length ? Object.keys(days).map(d => {
+      const sum = days[d].reduce((s, t) => { const c = cat(t.cat); return s + (!c || GROUPS[c.group].spend ? t.amount : 0); }, 0);
+      return `<div class="day"><div class="day-h"><span>${d.slice(5).replace('-', '.')} (${wd[new Date(d).getDay()]})</span><span class="num">${sum > 0 ? '-' + won(sum) : sum < 0 ? '+' + won(-sum) : ''}</span></div>
+        ${days[d].map(txRow).join('')}</div>`;
+    }).join('') : `<div class="card empty"><p>${f === 'unc' ? '미분류 내역이 없어요.' : f === 'pending' ? '확인할 예정 기록이 없어요.' : UI.q ? '검색 결과가 없어요.' : '이 기간에 내역이 없어요.'}</p></div>`;
+    $$('.tx', body).forEach(b => b.onclick = () => openEditor(S.tx.find(t => t.id === b.dataset.id)));
   }
   function txRow(t) {
     const c = cat(t.cat); const g = c ? c.group : null; const m = method(t.method);
@@ -733,6 +765,8 @@
         <div class="set-row"><span>예산 시작일 <span class="muted small">(매월)</span></span><input inputmode="numeric" id="startDay" value="${S.settings.startDay}"></div>
         <div class="set-row"><span>내 이름 <span class="muted small">(본인 이체 구분)</span></span><input id="myName" value="${esc(S.settings.myName)}" style="font-family:var(--sans)"></div>
         <div class="set-row"><span>적립 시작 월</span><input id="resStart" value="${esc(S.settings.reserveStart)}" placeholder="2026-11"></div>
+        <div class="set-row"><span>생활비 이월 <span class="muted small">(남은 돈·초과분을 다음 달로)</span></span><select id="carryOn" class="search" style="width:auto;padding:5px 8px"><option value="on" ${S.settings.carry !== false ? 'selected' : ''}>켜기</option><option value="off" ${S.settings.carry === false ? 'selected' : ''}>끄기</option></select></div>
+        <div class="set-row"><span>이월 시작 월</span><input id="carryStart" value="${esc(S.settings.carryStart || S.settings.reserveStart || '')}" placeholder="2026-11"></div>
         <div class="set-row"><span>매월 적립일</span><input inputmode="numeric" id="resDay" value="${reserveDay()}"></div>
         ${catsOf(['reserve']).map(c => `<div class="set-row"><span>${esc(c.name)} 시작 잔액</span><input inputmode="numeric" data-open="${c.id}" value="${won((S.settings.reserveOpening || {})[c.id] || 0)}"></div>`).join('')}
       </div>
@@ -756,8 +790,10 @@
         <div class="btns"><button class="btn ghost" id="exp">JSON으로 내보내기</button><label class="btn ghost" for="impJson">JSON 불러오기</label><input type="file" id="impJson" accept=".json" hidden></div>
         <button class="btn danger" id="wipe">이 기기의 데이터 모두 지우기</button>
       </div>
+      <p class="small muted" id="persistInfo" style="text-align:center"></p>
       <p class="small muted" style="text-align:center">Moneta v2 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
     `;
+    try { if (navigator.storage && navigator.storage.persisted) navigator.storage.persisted().then(ok => { const pi = $('#persistInfo'); if (pi) pi.textContent = ok ? '이 기기 저장소: 보존 모드 (브라우저가 임의로 지우지 않음)' : '이 기기 저장소: 일반 모드 — 저장 공간이 부족하면 브라우저가 지울 수 있어요. 동기화를 꼭 켜두세요.'; }); } catch (e) {}
     const numIn = (inp, fn) => { inp.onchange = () => { const v = Number(inp.value.replace(/[^\d-]/g, '')) || 0; fn(v); inp.value = won(v); persist(); }; };
     $$('[data-budget]', el).forEach(inp => numIn(inp, v => { const c = cat(inp.dataset.budget); c.budget = v; c.updatedAt = now(); renderSettings(); }));
     $$('[data-open]', el).forEach(inp => numIn(inp, v => { S.settings.reserveOpening = Object.assign({}, S.settings.reserveOpening, { [inp.dataset.open]: v }); S.settings.updatedAt = now(); }));
@@ -772,6 +808,8 @@
     };
     $('#startDay', el).onchange = e => { S.settings.startDay = Math.min(Math.max(parseInt(e.target.value, 10) || 1, 1), 28); e.target.value = S.settings.startDay; S.settings.updatedAt = now(); UI.ym = curYm(); persist(); updateMonth(); };
     $('#myName', el).onchange = e => { S.settings.myName = e.target.value.trim(); S.settings.updatedAt = now(); persist(); };
+    $('#carryOn', el).onchange = e => { S.settings.carry = e.target.value === 'on'; S.settings.updatedAt = now(); persist(); };
+    $('#carryStart', el).onchange = e => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { S.settings.carryStart = e.target.value; S.settings.updatedAt = now(); persist(); } else toast('2026-11 형식으로 입력해 주세요'); };
     $('#resDay', el).onchange = e => { S.settings.reserveDay = Math.min(Math.max(parseInt(e.target.value, 10) || 21, 1), 31); e.target.value = S.settings.reserveDay; S.settings.updatedAt = now(); persist(); };
     $('#resStart', el).onchange = e => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { S.settings.reserveStart = e.target.value; S.settings.updatedAt = now(); persist(); } else toast('2026-11 형식으로 입력해 주세요'); };
     $('#clientId', el).onchange = e => { L.clientId = e.target.value.trim(); saveLocal(); };
@@ -904,7 +942,7 @@
   function render(soft) {
     updateMonth();
     if (UI.tab === 'home') renderHome();
-    else if (UI.tab === 'list') { if (soft && document.activeElement && document.activeElement.id === 'q') return; renderList(); }
+    else if (UI.tab === 'list') renderList();
     else if (UI.tab === 'import') renderImport();
     else if (UI.tab === 'settings') { if (soft) { const i = $('#syncInfo'); if (i) i.textContent = '마지막 동기화: ' + new Date(L.lastSync).toLocaleString('ko-KR'); return; } renderSettings(); }
   }

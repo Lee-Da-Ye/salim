@@ -1,6 +1,6 @@
 // 앱 화면 파일을 캐시해서 오프라인에서도 열리게 함. 파일을 고치면 VERSION을 올리세요.
-const VERSION = 'moneta-v6';
-const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'xlsx-lite.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
+const VERSION = 'moneta-v8';
+const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'xlsx-lite.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {
   e.waitUntil(caches.open(VERSION).then(c => c.addAll(SHELL)).then(() => self.skipWaiting()));
