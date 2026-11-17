@@ -1,5 +1,5 @@
 // 앱 화면 파일을 캐시해서 오프라인에서도 열리게 함. 파일을 고치면 VERSION을 올리세요.
-const VERSION = 'moneta-v12';
+const VERSION = 'moneta-v14';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'xlsx-lite.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -19,7 +19,8 @@ self.addEventListener('fetch', e => {
   if (url.origin !== location.origin) return; // 구글 로그인·Firestore·폰트는 그대로 네트워크
   // 네트워크 우선, 실패하면 캐시 (배포한 새 버전이 바로 반영되도록)
   e.respondWith(
-    fetch(e.request).then(r => { const copy = r.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); return r; })
+    // 서버에 새 버전이 있는지 항상 확인 (브라우저 캐시 때문에 예전 파일이 뜨지 않게)
+    fetch(e.request.mode === 'navigate' ? new Request(url.href, { cache: 'no-cache' }) : new Request(e.request, { cache: 'no-cache' })).then(r => { const copy = r.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); return r; })
       .catch(() => caches.match(e.request).then(r => r || caches.match('index.html')))
   );
 });
