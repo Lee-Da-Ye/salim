@@ -175,6 +175,7 @@
     const have = new Set(S.cats.map(c => c.id));
     DEFAULT_CATS.forEach(([id, name, group, budget, subs], i) => { if (!have.has(id)) S.cats.push({ id, name, group, budget, subs, order: i, updatedAt: 0 }); });
     normalizeDefaults(S);
+    migrateSavingSplit(S);
   }
   let saveTimer = null;
   function persist(changed = true) {
@@ -851,6 +852,13 @@
     const st = x.settings;
     if (st && !st.myName && (st.startDay || 1) == 1 && st.carry === undefined && !st.carryStart && !st.reserveDay && !(st.reserveOpening && (st.reserveOpening.rs_gym || st.reserveOpening.rs_irr))) st.updatedAt = 0;
     return x;
+  }
+  // 1회 이전: 예전 기본값(연금 50만 / ISA 58.4만)으로 남아 있는 값을 확정한 계획(25만 / 83.4만)으로 바꿈.
+  // 진짜 수정으로 기록(updatedAt=지금)해서 다른 기기에도 전파되고, 한 번 바꾼 뒤에는 다시 건드리지 않음.
+  function migrateSavingSplit(x) {
+    const t = now(), map = { sv_pension: [500000, 250000], sv_isa: [584000, 834000] };
+    (x.cats || []).forEach(c => { const m = map[c.id]; if (m && !c.mig12 && c.budget === m[0]) { c.budget = m[1]; c.mig12 = 1; c.updatedAt = t; } });
+    (x.recurring || []).forEach(r => { const m = map[r.cat]; if (m && !r.mig12 && r.amount === m[0]) { r.amount = m[1]; r.mig12 = 1; r.updatedAt = t; } });
   }
   function merge(a, b) {
     normalizeDefaults(a); normalizeDefaults(b);
