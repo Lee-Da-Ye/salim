@@ -14,7 +14,7 @@
   const TYPE_GROUPS = { expense: ['living', 'fixed', 'reserve'], income: ['income'], saving: ['saving'], transfer: ['transfer'] };
 
   const DEFAULT_CATS = [
-    ['lv_food', '식비', 'living', 450000, ['배달', '외식', '카페', '디저트', '장보기', '편의점']],
+    ['lv_food', '식비', 'living', 450000, ['배달', '외식', '구내식당', '카페', '디저트', '장보기', '편의점']],
     ['lv_life', '생활', 'living', 150000, ['생필품', '의료·약국', '기타']],
     ['lv_pocket', '용돈', 'living', 250000, ['쇼핑', '뷰티', '여가·문화', '도서', '앱결제', '선물']],
     ['fx_loan', '대출이자', 'fixed', 220000, []],
@@ -26,12 +26,13 @@
     ['fx_trans', '교통', 'fixed', 100000, ['대중교통', '택시']],
     ['fx_dona', '기부', 'fixed', 80000, []],
     ['fx_gye', '모임계', 'fixed', 20000, []],
+    ['fx_union', '노조비', 'fixed', 60000, []],
     ['rs_gym', '운동', 'reserve', 420000, ['PT', '기타운동']],
     ['rs_irr', '비정기', 'reserve', 300000, ['의료', '선물·경조사', '공연·문화', '가전·IT', '여행', '기타']],
     ['sv_youth', '청년도약', 'saving', 700000, []],
     ['sv_house', '주택청약', 'saving', 20000, []],
     ['sv_pension', '연금저축', 'saving', 250000, []],
-    ['sv_isa', 'ISA', 'saving', 834000, []],
+    ['sv_isa', 'ISA', 'saving', 774000, []],
     ['in_salary', '급여', 'income', 0, []],
     ['in_bonus', '성과급', 'income', 0, []],
     ['in_welfare', '복지포인트', 'income', 0, []],
@@ -50,7 +51,8 @@
     ['m_ibk', '기업 이체', 'transfer'],
     ['m_irr', '우리(비정기) 이체', 'transfer'],
     ['m_moneyacct', '머니통장 이체', 'transfer'],
-    ['m_cash', '현금', 'cash']
+    ['m_cash', '현금', 'cash'],
+    ['m_payroll', '급여 공제', 'cash']
   ];
 
   // [키워드, 카테고리, 하위]  위에서부터 먼저 맞는 규칙 적용
@@ -89,6 +91,8 @@
   // 반복 기록: [이름, 카테고리, 하위, 금액, 매월 일, 결제수단, 'fixed'=확정 | 'estimate'=예정(금액 확인 필요)]
   const DEFAULT_RECURRING = [
     ['급여', 'in_salary', '', 4150000, 20, 'm_hana', 'estimate'],
+    ['구내식당·카페', 'lv_food', '구내식당', 80000, 20, 'm_payroll', 'estimate'],
+    ['노조비', 'fx_union', '', 60000, 20, 'm_payroll', 'estimate'],
     ['나비야사랑해', 'fx_dona', '', 30000, 1, 'm_hana', 'fixed'],
     ['모임계', 'fx_gye', '', 20000, 1, 'm_hana', 'fixed'],
     ['전세대출 이자', 'fx_loan', '', 220000, 12, 'm_hana', 'estimate'],
@@ -101,7 +105,7 @@
     ['청년도약계좌', 'sv_youth', '', 700000, 21, 'm_ibk', 'fixed'],
     ['주택청약', 'sv_house', '', 20000, 21, 'm_hana', 'fixed'],
     ['연금저축', 'sv_pension', '', 250000, 21, 'm_hana', 'fixed'],
-    ['ISA', 'sv_isa', '', 834000, 21, 'm_hana', 'fixed'],
+    ['ISA', 'sv_isa', '', 774000, 21, 'm_hana', 'fixed'],
     ['관리비', 'fx_mgmt', '', 100000, 22, 'm_hana', 'fixed'],
     ['롯데손해보험', 'fx_ins', '', 134012, 26, 'm_hana', 'fixed'],
     ['고보협', 'fx_dona', '', 50000, 26, 'm_hana', 'fixed']
@@ -190,6 +194,12 @@
     normalizeDefaults(S);
     migrateSavingSplit(S);
     migrateFoodSubs(S);
+    // 새로 생긴 기본 결제수단·반복 기록 보충
+    const hm = new Set(S.methods.map(m => m.id));
+    DEFAULT_METHODS.forEach(([id, name, kind], i) => { if (!hm.has(id)) S.methods.push({ id, name, kind, order: i, updatedAt: 0 }); });
+    const hr = new Set(S.recurring.map(r => r.id));
+    defaultRecurring(todayStr().slice(0, 7)).forEach(r => { if (!hr.has(r.id)) S.recurring.push(r); });
+    migratePayroll(S);
   }
   let saveTimer = null;
   function persist(changed = true) {
@@ -987,7 +997,7 @@
         <button class="btn danger" id="wipe">이 기기의 데이터 모두 지우기</button>
       </div>
       <p class="small muted" id="persistInfo" style="text-align:center"></p>
-      <p class="small muted" style="text-align:center">Moneta v15 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
+      <p class="small muted" style="text-align:center">Moneta v16 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
 `], 'spage');
     try { if (navigator.storage && navigator.storage.persisted) navigator.storage.persisted().then(ok => { const pi = $('#persistInfo'); if (pi) pi.textContent = ok ? '이 기기 저장소: 보존 모드 (브라우저가 임의로 지우지 않음)' : '이 기기 저장소: 일반 모드 — 저장 공간이 부족하면 브라우저가 지울 수 있어요. 동기화를 꼭 켜두세요.'; }); } catch (e) {}
     bindPagerG(el, 'spager', 'spage');
@@ -1075,6 +1085,19 @@
     (x.rules || []).forEach(r => { if (r.cat === 'lv_food' && r.sub === '카페·디저트') { r.sub = '카페'; r.updatedAt = t; } if (r.cat === 'lv_food' && r.sub === '장보기·편의점') { r.sub = '장보기'; r.updatedAt = t; } });
     return n;
   }
+  // 1회 이전: 급여 공제(구내식당·노조비) 반영 — ISA 83.4만 → 77.4만, 식비에 '구내식당' 세부, 급여 이름 정리
+  function migratePayroll(x) {
+    const t = now(); let n = 0; const bump = r => { r.mig16 = 1; r.updatedAt = Math.max(t, (r.updatedAt || 0) + 1); n++; };
+    (x.cats || []).forEach(c => {
+      if (c.id === 'sv_isa' && !c.mig16 && Number(c.budget) === 834000) { c.budget = 774000; bump(c); }
+      if (c.id === 'lv_food' && !c.mig16 && !(c.subs || []).includes('구내식당')) { c.subs = ['배달', '외식', '구내식당'].concat((c.subs || []).filter(v => !['배달', '외식'].includes(v))); bump(c); }
+    });
+    (x.recurring || []).forEach(r => {
+      if (r.cat === 'sv_isa' && !r.mig16 && Number(r.amount) === 834000) { r.amount = 774000; bump(r); }
+      if (r.cat === 'in_salary' && !r.mig16 && r.name === '급여') { r.name = '급여 (공제 전)'; bump(r); }
+    });
+    return n;
+  }
   function merge(a, b) {
     normalizeDefaults(a); normalizeDefaults(b);
     return {
@@ -1145,7 +1168,7 @@
             else if ((r.updatedAt || 0) > (S[n][i].updatedAt || 0)) { S[n][i] = r; changed = true; }
             P[n][r.id] = Math.max(P[n][r.id] ?? -1, r.updatedAt || 0);
           });
-          if (changed) { if (migrateSavingSplit(S) + migrateFoodSubs(S)) setTimeout(() => this.push(), 0); kvSet('state', S); render(true); }
+          if (changed) { if (migrateSavingSplit(S) + migrateFoodSubs(S) + migratePayroll(S)) setTimeout(() => this.push(), 0); kvSet('state', S); render(true); }
           done(n);
         }, onErr));
       });
