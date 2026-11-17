@@ -14,7 +14,7 @@
   const TYPE_GROUPS = { expense: ['living', 'fixed', 'reserve'], income: ['income'], saving: ['saving'], transfer: ['transfer'] };
 
   const DEFAULT_CATS = [
-    ['lv_food', '식비', 'living', 450000, ['배달', '외식', '카페·디저트', '장보기·편의점']],
+    ['lv_food', '식비', 'living', 450000, ['배달', '외식', '카페', '디저트', '장보기', '편의점']],
     ['lv_life', '생활', 'living', 150000, ['생필품', '의료·약국', '기타']],
     ['lv_pocket', '용돈', 'living', 250000, ['쇼핑', '뷰티', '여가·문화', '도서', '앱결제', '선물']],
     ['fx_loan', '대출이자', 'fixed', 220000, []],
@@ -62,12 +62,12 @@
     ['멜론티켓', 'rs_irr', '공연·문화'], ['인터파크', 'rs_irr', '공연·문화'], ['트래블월렛', 'rs_irr', '여행'],
     ['주식회사 카카오', 'rs_irr', '선물·경조사'],
     ['필라테스', 'rs_gym', 'PT'], ['밸런스홈', 'rs_gym', 'PT'], ['피트니스', 'rs_gym', 'PT'],
-    ['커피', 'lv_food', '카페·디저트'], ['카페', 'lv_food', '카페·디저트'], ['폴바셋', 'lv_food', '카페·디저트'], ['할리스', 'lv_food', '카페·디저트'],
-    ['투썸', 'lv_food', '카페·디저트'], ['공차', 'lv_food', '카페·디저트'], ['에스씨케이', 'lv_food', '카페·디저트'], ['스타벅스', 'lv_food', '카페·디저트'],
-    ['에스프레소', 'lv_food', '카페·디저트'], ['베이커리', 'lv_food', '카페·디저트'], ['쁘띠정동', 'lv_food', '카페·디저트'],
-    ['GS25', 'lv_food', '장보기·편의점'], ['이마트24', 'lv_food', '장보기·편의점'], ['씨유', 'lv_food', '장보기·편의점'], ['세븐일레븐', 'lv_food', '장보기·편의점'],
-    ['하나로마트', 'lv_food', '장보기·편의점'], ['제로스토어', 'lv_food', '장보기·편의점'], ['컬리', 'lv_food', '장보기·편의점'], ['농라', 'lv_food', '장보기·편의점'],
-    ['이마트', 'lv_food', '장보기·편의점'], ['홈플러스', 'lv_food', '장보기·편의점'],
+    ['커피', 'lv_food', '카페'], ['카페', 'lv_food', '카페'], ['폴바셋', 'lv_food', '카페'], ['할리스', 'lv_food', '카페'],
+    ['투썸', 'lv_food', '카페'], ['공차', 'lv_food', '카페'], ['에스씨케이', 'lv_food', '카페'], ['스타벅스', 'lv_food', '카페'],
+    ['에스프레소', 'lv_food', '카페'], ['베이커리', 'lv_food', '디저트'], ['쁘띠정동', 'lv_food', '디저트'], ['디저트', 'lv_food', '디저트'], ['케이크', 'lv_food', '디저트'], ['도넛', 'lv_food', '디저트'], ['성심당', 'lv_food', '디저트'], ['로쏘', 'lv_food', '디저트'],
+    ['GS25', 'lv_food', '편의점'], ['이마트24', 'lv_food', '편의점'], ['씨유', 'lv_food', '편의점'], ['세븐일레븐', 'lv_food', '편의점'],
+    ['하나로마트', 'lv_food', '장보기'], ['제로스토어', 'lv_food', '장보기'], ['컬리', 'lv_food', '장보기'], ['농라', 'lv_food', '장보기'],
+    ['이마트', 'lv_food', '장보기'], ['홈플러스', 'lv_food', '장보기'],
     ['맥도날드', 'lv_food', '외식'], ['김밥', 'lv_food', '외식'], ['우동', 'lv_food', '외식'], ['식당', 'lv_food', '외식'], ['곱창', 'lv_food', '외식'], ['버거', 'lv_food', '외식'],
     ['다이소', 'lv_life', '생필품'],
     ['약국', 'lv_life', '의료·약국'], ['의원', 'lv_life', '의료·약국'], ['의윈', 'lv_life', '의료·약국'], ['병원', 'lv_life', '의료·약국'], ['이비인후과', 'lv_life', '의료·약국'],
@@ -189,6 +189,7 @@
     DEFAULT_CATS.forEach(([id, name, group, budget, subs], i) => { if (!have.has(id)) S.cats.push({ id, name, group, budget, subs, order: i, updatedAt: 0 }); });
     normalizeDefaults(S);
     migrateSavingSplit(S);
+    migrateFoodSubs(S);
   }
   let saveTimer = null;
   function persist(changed = true) {
@@ -470,10 +471,9 @@
           <div class="small muted">${p.start.slice(5).replace('-', '.')} ~ ${p.end.slice(5).replace('-', '.')} · ${elapsed}/${p.days}일 · 세로선은 오늘까지 적정 사용 위치</div>
         </div>
         ${flowCard(st)}
-        ${assetCard()}
-        ${trendCard()}
       </div>
       ${pager(st, pace)}
+      ${compareCard()}
     `;
     const cs = $('#clearSample', el); if (cs) cs.onclick = clearSample;
     bindPager(el);
@@ -522,6 +522,66 @@
       <details class="adetail"><summary class="small muted">항목별 보기</summary>${as.filter(x => x[1]).map(([a, v]) => `<div class="kv"><span>${esc(a.name)}</span><b class="num" style="${v < 0 ? 'color:var(--bad)' : ''}">${won(v)}</b></div>`).join('')}</details>
     </div>`;
   }
+  // 지난달과 비교 + 최근 6개월 생활비 사용률
+  function compareCard() {
+    const cur = stats(UI.ym), prev = stats(shiftYm(UI.ym, -1));
+    const g = (st, id) => catsOf([id]).reduce((s, c) => s + (st.byCat[c.id] || 0), 0);
+    const tiles = [['living', '생활비'], ['fixed', '고정지출'], ['reserve', '적립 사용'], ['saving', '저축·투자']].map(([id, n]) => {
+      const a = g(cur, id), b = g(prev, id), d = a - b;
+      const good = id === 'saving' ? d >= 0 : d <= 0;
+      return `<div class="ct"><span class="ct-n"><span class="dot" style="background:${GROUPS[id].color}"></span>${n}</span><b class="num">${man(a)}</b>
+        <span class="ct-d" style="color:${!d || !b ? 'var(--muted)' : good ? 'var(--ok)' : 'var(--bad)'}">${!b ? '지난달 기록 없음' : (d > 0 ? '▲ ' : d < 0 ? '▼ ' : '') + (d ? man(Math.abs(d)) : '변화 없음')}</span></div>`;
+    }).join('');
+    const months = []; for (let k = 5; k >= 0; k--) months.push(shiftYm(UI.ym, -k));
+    const base = catsOf(['living']).reduce((s, c) => s + (c.budget || 0), 0) || 1;
+    const pills = months.map(m => { const v = g(stats(m), 'living'), r = v / base, cls = !v ? 'none' : r > 1 ? 'bad' : r > 0.9 ? 'warn' : 'ok';
+      return `<div class="mp ${cls} ${m === UI.ym ? 'cur' : ''}"><span>${Number(m.slice(5))}월</span><b class="num">${v ? Math.round(r * 100) + '%' : '-'}</b><small class="num">${v ? man(v) : ''}</small></div>`; }).join('');
+    return `<div class="card">
+      <div class="card-h"><b>지난달과 비교</b><span class="muted small">${Number(shiftYm(UI.ym, -1).slice(5))}월 대비</span></div>
+      <div class="ctiles">${tiles}</div>
+      <div class="card-h" style="margin:14px 0 8px"><b style="font-size:14px">최근 6개월 생활비</b><span class="muted small">예산 대비 사용률</span></div>
+      <div class="mpills">${pills}</div>
+    </div>`;
+  }
+  // ----- 자산 탭 -----
+  function assetChange(a) {   // 이번 기간 변화
+    const st = stats(UI.ym);
+    if (a.kind === 'reserve' && a.link) { const c = cat(a.link); return (reservedThisMonth() ? (c ? c.budget : 0) : 0) - (st.byCat[a.link] || 0); }
+    if (a.link) return st.txs.filter(t => t.cat === a.link && !t.pending && t.date >= (a.baseDate || '0000')).reduce((s, t) => s + t.amount, 0);
+    return null;
+  }
+  function renderAssets() {
+    const el = $('#view-assets');
+    const hide = !!UI.hideAssets;
+    const M = v => hide ? '•••••' : won(v);
+    const as = liveAssets().map(a => ({ a, v: assetValue(a), d: assetChange(a) }));
+    const total = as.reduce((s, x) => s + x.v, 0);
+    const delta = as.reduce((s, x) => s + (x.d || 0), 0);
+    const byKind = {}; as.forEach(x => { byKind[x.a.kind] = (byKind[x.a.kind] || 0) + x.v; });
+    const pos = Object.keys(ASSET_KIND).filter(k => k !== 'debt' && byKind[k] > 0);
+    const posSum = pos.reduce((s, k) => s + byKind[k], 0) || 1;
+    const empty = !as.some(x => x.v);
+    el.innerHTML = `
+      <div class="card">
+        <div class="card-h"><b>순자산</b><button class="eye" id="eyeBtn" aria-pressed="${hide}">${hide ? '금액 보기' : '금액 가리기'}</button></div>
+        <div class="big">${M(total)}<span class="unit"> 원</span></div>
+        <div class="small" style="margin-top:4px;color:${delta > 0 ? 'var(--ok)' : delta < 0 ? 'var(--bad)' : 'var(--muted)'}">이번 달 ${delta > 0 ? '+' : delta < 0 ? '−' : ''}${hide ? '•••' : won(Math.abs(delta))}원 <span class="muted">(저축·투자 납입 + 적립 통장 증감)</span></div>
+      </div>
+      ${empty ? `<div class="card"><p class="small muted" style="margin:0">설정 → 자산에서 지금 잔액(비상금, 청약, 보증금, 대출 등)을 한 번 입력하면 여기에 보여요.</p><button class="btn ghost" data-go="settings" data-spage="2" style="margin-top:8px">자산 입력하기</button></div>` : `
+      <div class="card">
+        <div class="card-h"><b>구성</b><span class="muted small">부채 제외</span></div>
+        <div class="kbars">${pos.map(k => `<div class="kb"><div class="kb-h"><span><span class="dot" style="background:${ASSET_KIND[k][1]}"></span>${ASSET_KIND[k][0]}</span><span class="num">${hide ? '' : man(byKind[k]) + ' · '}${Math.round(byKind[k] / posSum * 100)}%</span></div><div class="kb-bar"><i style="width:${(byKind[k] / posSum * 100).toFixed(1)}%;background:${ASSET_KIND[k][1]}"></i></div></div>`).join('')}
+        ${byKind.debt ? `<div class="kb"><div class="kb-h"><span><span class="dot" style="background:var(--bad)"></span>부채</span><span class="num" style="color:var(--bad)">${hide ? '•••' : man(byKind.debt)}</span></div></div>` : ''}</div>
+      </div>
+      <div class="card">
+        <div class="card-h"><b>항목별</b><span class="muted small">이번 달 변화</span></div>
+        ${as.filter(x => x.v || x.d).map(x => `<div class="arow"><span class="dot" style="background:${ASSET_KIND[x.a.kind][1]}"></span><span class="an">${esc(x.a.name)}<small>${ASSET_KIND[x.a.kind][0]}${x.a.link && x.a.kind !== 'reserve' ? ' · 납입 자동 반영' : x.a.kind === 'reserve' ? ' · 자동 계산' : ' · 직접 입력'}</small></span>
+          <span class="av"><b class="num" style="${x.v < 0 ? 'color:var(--bad)' : ''}">${M(x.v)}</b>${x.d ? `<small class="num" style="color:${x.d > 0 ? 'var(--ok)' : 'var(--bad)'}">${x.d > 0 ? '+' : '−'}${hide ? '•••' : won(Math.abs(x.d))}</small>` : ''}</span></div>`).join('')}
+        <button class="btn ghost block" data-go="settings" data-spage="2" style="margin-top:10px">금액 수정하기</button>
+      </div>`}
+    `;
+    $('#eyeBtn', el).onclick = () => { UI.hideAssets = !UI.hideAssets; try { localStorage.setItem('moneta-hide-assets', UI.hideAssets ? '1' : ''); } catch (e) {} renderAssets(); };
+  }
   function trendCard() {
     const months = []; for (let k = 5; k >= 0; k--) months.push(shiftYm(UI.ym, -k));
     const data = months.map(m => { const st = stats(m); const g = id => catsOf([id]).reduce((s, c) => s + (st.byCat[c.id] || 0), 0); return { m, fixed: g('fixed'), living: g('living'), reserve: g('reserve'), saving: g('saving') }; });
@@ -556,7 +616,7 @@
     const fit = i => { const pgEl = pg.children[i]; if (pgEl) pg.style.height = pgEl.scrollHeight + 'px'; };
     const mark = i => { tabs.forEach(b => b.classList.toggle('on', +b.dataset.pg === i)); fit(i); };
     pg.scrollLeft = (UI[key] || 0) * step(); mark(UI[key] || 0);
-    tabs.forEach(b => b.onclick = () => { UI[key] = +b.dataset.pg; mark(UI[key]); pg.scrollTo({ left: UI[key] * step(), behavior: 'smooth' }); });
+    tabs.forEach(b => b.onclick = () => { UI[key] = +b.dataset.pg; mark(UI[key]); pg.scrollTo({ left: UI[key] * step(), behavior: 'instant' }); });
     let t; pg.addEventListener('scroll', () => { clearTimeout(t); t = setTimeout(() => { const i = Math.round(pg.scrollLeft / step()); if (i !== UI[key]) { UI[key] = i; mark(i); } }, 60); }, { passive: true });
     if (window.ResizeObserver) { const ro = new ResizeObserver(() => fit(UI[key] || 0)); Array.from(pg.children).forEach(c => ro.observe(c)); }
   }
@@ -625,7 +685,7 @@
     const fl = [['all', '전체'], ['spend', '지출만'], ['pending', '확인 필요'], ['unc', '미분류'], ['living', '생활'], ['fixed', '고정'], ['reserve', '적립'], ['saving', '저축'], ['income', '수입'], ['transfer', '이체·제외']];
     if (!$('#listBody', el)) {
       el.innerHTML = `
-        <input class="search" id="q" type="search" placeholder="가맹점·메모·카테고리 검색" aria-label="검색" autocomplete="off">
+        <div style="display:flex;gap:8px"><input class="search" id="q" type="search" placeholder="가맹점·메모·카테고리 검색" aria-label="검색" autocomplete="off" style="flex:1"><button class="btn ghost" data-go="import" style="white-space:nowrap">엑셀 가져오기</button></div>
         <div class="filters">${fl.map(([k, n]) => `<button class="fchip" data-f="${k}">${n}</button>`).join('')}</div>
         <div class="lctl">
           <label><span>묶어보기</span><select id="lGroup"><option value="date">날짜별</option><option value="cat">카테고리별</option><option value="sub">세부 항목별</option><option value="merchant">사용처별</option><option value="method">결제수단별</option></select></label>
@@ -859,7 +919,7 @@
     const el = $('#view-settings');
     const groups = ['living', 'fixed', 'reserve', 'saving'];
     const total = S.cats.filter(c => !c.deleted && groups.includes(c.group)).reduce((s, c) => s + (Number(c.budget) || 0), 0);
-    el.innerHTML = pagerHtml('spager', ['기본', '예산', '자산', '반복 기록', '분류 규칙', '결제수단·백업'], [`      <h2>동기화</h2>
+    el.innerHTML = pagerHtml('spager', ['기본', '예산', '자산', '반복', '분류', '결제·백업'], [`      <h2>동기화</h2>
       <div class="card set">
         <div class="small muted">${fbConf() ? (Sync.user ? `<b style="color:var(--fg)">${esc(Sync.user.email)}</b>로 로그인됨 · 입력하면 다른 기기에 바로 반영돼요` : '구글로 한 번 로그인하면 계속 유지되고, 기기끼리 실시간으로 맞춰져요.') : 'config.js에 Firebase 설정을 넣으면 동기화가 켜져요. (README 참고)'}</div>
         ${fbConf() ? `<div class="btns">${Sync.user ? '<button class="btn" id="syncNow">지금 동기화</button><button class="btn ghost" id="syncOff">로그아웃</button>' : '<button class="btn" id="syncNow">구글로 로그인</button>'}</div>` : ''}
@@ -897,10 +957,10 @@
       <div class="card set">
         <div class="small muted">확정: 정한 금액 그대로 기록 · 예정: 지난달 금액으로 기록하고 "확인 필요"로 표시 (실제 금액으로 고치거나 엑셀을 가져오면 확정)</div>
         ${(S.recurring || []).filter(r => !r.deleted).sort((a, b) => a.day - b.day).map(r => `<div class="set-row" style="flex-wrap:wrap">
-          <span style="flex:1 1 140px;min-width:0"><b style="font-weight:500">${esc(r.name)}</b> <span class="muted small">매월 ${r.day}일 · ${esc(cat(r.cat) ? cat(r.cat).name : '?')}</span></span>
-          <select data-rmode="${r.id}" class="search" style="width:auto;padding:5px 8px"><option value="fixed" ${r.mode === 'fixed' ? 'selected' : ''}>확정</option><option value="estimate" ${r.mode === 'estimate' ? 'selected' : ''}>예정</option><option value="off" ${!r.active ? 'selected' : ''}>중지</option></select>
-          <input inputmode="numeric" data-ramt="${r.id}" value="${won(r.amount)}" aria-label="${esc(r.name)} 금액">
-          <button data-rcdel="${r.id}" style="background:none;border:0;color:var(--bad);font-size:13px">삭제</button></div>`).join('')}
+          <span style="flex:1 1 100px;min-width:0"><b style="font-weight:500">${esc(r.name)}</b><br><span class="small muted">매월 <input inputmode="numeric" data-rday="${r.id}" value="${r.day}" class="dayin" aria-label="${esc(r.name)} 날짜">일</span></span>
+          <select data-rmode="${r.id}" class="search" style="width:auto;padding:5px 4px"><option value="fixed" ${r.mode === 'fixed' ? 'selected' : ''}>확정</option><option value="estimate" ${r.mode === 'estimate' ? 'selected' : ''}>예정</option><option value="off" ${!r.active ? 'selected' : ''}>중지</option></select>
+          <input inputmode="numeric" data-ramt="${r.id}" value="${won(r.amount)}" aria-label="${esc(r.name)} 금액" style="width:96px">
+          <button data-rcdel="${r.id}" style="background:none;border:0;color:var(--bad);font-size:13px;padding:0 2px">삭제</button></div>`).join('')}
         <div class="row2"><input class="search" id="rcName" placeholder="이름 (예: 넷플릭스)"><select class="search" id="rcCat">${S.cats.filter(c => !c.deleted).sort((a, b) => a.order - b.order).map(c => `<option value="${c.id}">${GROUPS[c.group].name} · ${esc(c.name)}</option>`).join('')}</select></div>
         <div class="row2"><input class="search" id="rcAmt" inputmode="numeric" placeholder="금액"><input class="search" id="rcDay" inputmode="numeric" placeholder="매월 며칠 (1~31)"></div>
         <div class="row2"><select class="search" id="rcMode"><option value="fixed">확정 (금액 고정)</option><option value="estimate">예정 (매달 확인)</option></select><select class="search" id="rcMethod">${S.methods.filter(m => !m.deleted).map(m => `<option value="${m.id}">${esc(m.name)}</option>`).join('')}</select></div>
@@ -927,7 +987,7 @@
         <button class="btn danger" id="wipe">이 기기의 데이터 모두 지우기</button>
       </div>
       <p class="small muted" id="persistInfo" style="text-align:center"></p>
-      <p class="small muted" style="text-align:center">Moneta v14 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
+      <p class="small muted" style="text-align:center">Moneta v15 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
 `], 'spage');
     try { if (navigator.storage && navigator.storage.persisted) navigator.storage.persisted().then(ok => { const pi = $('#persistInfo'); if (pi) pi.textContent = ok ? '이 기기 저장소: 보존 모드 (브라우저가 임의로 지우지 않음)' : '이 기기 저장소: 일반 모드 — 저장 공간이 부족하면 브라우저가 지울 수 있어요. 동기화를 꼭 켜두세요.'; }); } catch (e) {}
     bindPagerG(el, 'spager', 'spage');
@@ -938,6 +998,7 @@
     $$('[data-adel]', el).forEach(b => b.onclick = () => { const a = S.assets.find(x => x.id === b.dataset.adel); a.deleted = true; a.updatedAt = now(); persist(); renderSettings(); });
     $('#aAdd', el).onclick = () => { const n = $('#aName').value.trim(); if (!n) { toast('자산 이름을 입력해 주세요'); return; } S.assets.push({ id: 'a_' + uid(), name: n, kind: $('#aKind').value, link: $('#aLink').value, base: Number($('#aBase').value.replace(/[^\d]/g, '')) || 0, baseDate: todayStr(), order: S.assets.length, updatedAt: now() }); persist(); renderSettings(); toast('추가했어요'); };
     $$('[data-rmode]', el).forEach(sel => sel.onchange = () => { const r = S.recurring.find(x => x.id === sel.dataset.rmode); if (sel.value === 'off') r.active = false; else { r.active = true; r.mode = sel.value; } r.updatedAt = now(); persist(); generateRecurring(); });
+    $$('[data-rday]', el).forEach(inp => inp.onchange = () => { const r = S.recurring.find(x => x.id === inp.dataset.rday); const d = Math.min(Math.max(parseInt(inp.value, 10) || r.day, 1), 31); inp.value = d; if (d !== r.day) { r.day = d; r.updatedAt = now(); persist(); generateRecurring(); toast('매월 ' + d + '일로 바꿨어요 (다음 기록부터 적용)'); } });
     $$('[data-ramt]', el).forEach(inp => numIn(inp, v => { const r = S.recurring.find(x => x.id === inp.dataset.ramt); r.amount = v; r.updatedAt = now(); }));
     $$('[data-rcdel]', el).forEach(b => b.onclick = () => { const r = S.recurring.find(x => x.id === b.dataset.rcdel); r.deleted = true; r.updatedAt = now(); persist(); renderSettings(); toast('반복 기록을 삭제했어요 (이미 기록된 내역은 남아요)'); });
     $('#rcAdd', el).onclick = () => {
@@ -998,6 +1059,20 @@
     const t = now(), map = { sv_pension: [500000, 250000], sv_isa: [584000, 834000] }; let n = 0;
     (x.cats || []).forEach(c => { const m = map[c.id]; if (m && !c.mig12 && Number(c.budget) === m[0]) { c.budget = m[1]; c.mig12 = 1; c.updatedAt = Math.max(t, (c.updatedAt || 0) + 1); n++; } });
     (x.recurring || []).forEach(r => { const m = map[r.cat]; if (m && !r.mig12 && Number(r.amount) === m[0]) { r.amount = m[1]; r.mig12 = 1; r.updatedAt = Math.max(t, (r.updatedAt || 0) + 1); n++; } });
+    return n;
+  }
+  // 1회 이전: 식비 세부 '카페·디저트' → 카페/디저트, '장보기·편의점' → 장보기/편의점
+  function migrateFoodSubs(x) {
+    const food = (x.cats || []).find(c => c.id === 'lv_food'); if (!food || food.migFood) return 0;
+    const t = now(); let n = 0;
+    food.subs = ['배달', '외식', '카페', '디저트', '장보기', '편의점']; food.migFood = 1; food.updatedAt = Math.max(t, (food.updatedAt || 0) + 1); n++;
+    const conv = /GS25|이마트24|씨유|CU|세븐일레븐|미니스톱|편의점/i, dess = /베이커리|쁘띠정동|디저트|케이크|도넛|성심당|로쏘|빵/;
+    (x.tx || []).forEach(tx => {
+      if (tx.cat !== 'lv_food') return;
+      if (tx.sub === '카페·디저트') { tx.sub = dess.test(tx.merchant || '') ? '디저트' : '카페'; tx.updatedAt = Math.max(t, (tx.updatedAt || 0) + 1); n++; }
+      else if (tx.sub === '장보기·편의점') { tx.sub = conv.test(tx.merchant || '') ? '편의점' : '장보기'; tx.updatedAt = Math.max(t, (tx.updatedAt || 0) + 1); n++; }
+    });
+    (x.rules || []).forEach(r => { if (r.cat === 'lv_food' && r.sub === '카페·디저트') { r.sub = '카페'; r.updatedAt = t; } if (r.cat === 'lv_food' && r.sub === '장보기·편의점') { r.sub = '장보기'; r.updatedAt = t; } });
     return n;
   }
   function merge(a, b) {
@@ -1070,7 +1145,7 @@
             else if ((r.updatedAt || 0) > (S[n][i].updatedAt || 0)) { S[n][i] = r; changed = true; }
             P[n][r.id] = Math.max(P[n][r.id] ?? -1, r.updatedAt || 0);
           });
-          if (changed) { if (migrateSavingSplit(S)) setTimeout(() => this.push(), 0); kvSet('state', S); render(true); }
+          if (changed) { if (migrateSavingSplit(S) + migrateFoodSubs(S)) setTimeout(() => this.push(), 0); kvSet('state', S); render(true); }
           done(n);
         }, onErr));
       });
@@ -1115,8 +1190,8 @@
     const p = period(UI.ym); const t = now(); const d = n => { const x = new Date(p.start); x.setDate(x.getDate() + n); return ymd(x); };
     const rows = [
       [0, '하나 급여', 4150000, 'in_salary', '', 'm_hana'], [1, '청년도약', 700000, 'sv_youth', '', 'm_ibk'], [1, '연금저축', 500000, 'sv_pension', '', 'm_hana'],
-      [1, '관리비', 130000, 'fx_mgmt', '', 'm_hana'], [2, '쿠팡이츠', 18000, 'lv_food', '배달', 'm_money'], [2, '컴포즈커피', 3500, 'lv_food', '카페·디저트', 'm_money'],
-      [3, 'GS25', 6200, 'lv_food', '장보기·편의점', 'm_money'], [4, '올리브영', 32000, 'lv_pocket', '뷰티', 'm_money'], [5, '당산곱창', 45000, 'lv_food', '외식', 'm_money'],
+      [1, '관리비', 130000, 'fx_mgmt', '', 'm_hana'], [2, '쿠팡이츠', 18000, 'lv_food', '배달', 'm_money'], [2, '컴포즈커피', 3500, 'lv_food', '카페', 'm_money'],
+      [3, 'GS25', 6200, 'lv_food', '장보기', 'm_money'], [4, '올리브영', 32000, 'lv_pocket', '뷰티', 'm_money'], [5, '당산곱창', 45000, 'lv_food', '외식', 'm_money'],
       [5, 'OPENAI *CHATGPT', 30012, 'fx_sub', 'AI·앱', 'm_shinhan'], [6, '다이소', 9000, 'lv_life', '생필품', 'm_money'], [7, '쿠팡', 27800, 'lv_pocket', '쇼핑', 'm_money']
     ];
     rows.forEach(([n, mer, amt, c, sub, m]) => S.tx.push({ id: uid(), createdAt: t, updatedAt: t, source: 'sample', sample: true, date: d(n), time: '', merchant: mer, memo: '', amount: amt, cat: c, sub, method: m }));
@@ -1130,7 +1205,7 @@
     UI.tab = tab; if (filter !== undefined && filter !== null) UI.filter = filter;
     $$('section.view').forEach(s => s.hidden = s.id !== 'view-' + tab);
     $$('nav.tabs [data-tab]').forEach(b => b.classList.toggle('on', b.dataset.tab === tab));
-    $('.month').style.visibility = tab === 'home' || tab === 'list' ? 'visible' : 'hidden';
+    $('.month').style.visibility = tab === 'home' || tab === 'list' || tab === 'assets' ? 'visible' : 'hidden';
     render(); window.scrollTo(0, 0);
   }
   function render(soft) {
@@ -1138,6 +1213,7 @@
     if (UI.tab === 'home') renderHome();
     else if (UI.tab === 'list') renderList();
     else if (UI.tab === 'import') renderImport();
+    else if (UI.tab === 'assets') renderAssets();
     else if (UI.tab === 'settings') { if (soft) { const i = $('#syncInfo'); if (i) i.textContent = '마지막 동기화: ' + new Date(L.lastSync).toLocaleString('ko-KR'); return; } renderSettings(); }
   }
 
@@ -1145,6 +1221,7 @@
     await load();
     generateRecurring();
     UI.ym = curYm();
+    try { UI.hideAssets = !!localStorage.getItem('moneta-hide-assets'); } catch (e) {}
     document.addEventListener('click', e => {
       const g = e.target.closest('[data-go]'); if (g) { if (g.dataset.spage) UI.spage = +g.dataset.spage; go(g.dataset.go, g.dataset.filter || null); }
     });

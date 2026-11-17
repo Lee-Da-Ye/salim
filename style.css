@@ -237,3 +237,35 @@ tr.dup td{color:var(--muted);text-decoration:line-through}
 .grpbox[open] summary{border-bottom:1px solid var(--line)}
 .grpbox .day .tx{border-left:0;border-right:0;border-radius:0!important}
 .grpbox .day .tx:last-child{border-bottom:0}
+
+/* v15 */
+.pager{transition:none!important}
+.pg-tabs{gap:0;justify-content:space-between}
+.pg-tabs button{padding:6px 6px;font-size:13.5px;flex:1 1 auto;white-space:nowrap}
+.ctiles{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.ct{background:var(--surface2);border-radius:10px;padding:10px 12px;display:grid;gap:2px;min-width:0}
+.ct-n{font-size:12px;color:var(--muted);display:flex;align-items:center;gap:5px}
+.ct b{font-size:17px}
+.ct-d{font-size:12px;font-family:var(--mono)}
+.mpills{display:grid;grid-template-columns:repeat(6,1fr);gap:5px}
+.mp{border-radius:10px;padding:8px 2px;text-align:center;display:grid;gap:1px;background:var(--surface2);min-width:0}
+.mp span{font-size:11px;color:var(--muted)}
+.mp b{font-size:14px}
+.mp small{font-size:10px;color:var(--muted)}
+.mp.ok{background:var(--accent-soft)} .mp.ok b{color:var(--ok)}
+.mp.warn{background:var(--warn-soft)} .mp.warn b{color:var(--warn)}
+.mp.bad{background:var(--bad-soft)} .mp.bad b{color:var(--bad)}
+.mp.cur{outline:2px solid var(--fg);outline-offset:-2px}
+.eye{border:1px solid var(--line);background:var(--surface);border-radius:14px;padding:3px 10px;font-size:12px;color:var(--muted)}
+.kbars{display:grid;gap:10px}
+.kb-h{display:flex;justify-content:space-between;font-size:13px;margin-bottom:4px}
+.kb-h span:first-child{display:flex;align-items:center;gap:6px}
+.kb-bar{height:8px;background:var(--surface2);border-radius:4px;overflow:hidden}
+.kb-bar i{display:block;height:100%;border-radius:4px}
+.arow{display:grid;grid-template-columns:auto minmax(0,1fr) auto;gap:10px;align-items:center;padding:9px 0;border-top:1px solid var(--line)}
+.arow:first-of-type{border-top:0}
+.arow .an{font-size:14px;min-width:0}
+.arow .an small{display:block;font-size:12px;color:var(--muted)}
+.arow .av{text-align:right;display:grid}
+.arow .av small{font-size:12px}
+.dayin{width:44px!important;text-align:center!important;padding:3px 4px!important;margin:0 2px;font-family:var(--mono)}
