@@ -1,5 +1,5 @@
 // 앱 화면 파일을 캐시해서 오프라인에서도 열리게 함. 파일을 고치면 VERSION을 올리세요.
-const VERSION = 'moneta-v8';
+const VERSION = 'moneta-v11';
 const SHELL = ['./', 'index.html', 'style.css', 'app.js', 'config.js', 'xlsx-lite.js', 'manifest.webmanifest', 'icons/icon.svg', 'icons/icon-192.png', 'icons/icon-512.png'];
 
 self.addEventListener('install', e => {
@@ -10,7 +10,13 @@ self.addEventListener('activate', e => {
 });
 self.addEventListener('fetch', e => {
   const url = new URL(e.request.url);
-  if (e.request.method !== 'GET' || url.origin !== location.origin) return; // 구글 API·폰트는 그대로 네트워크
+  if (e.request.method !== 'GET') return;
+  // Firebase SDK는 버전이 고정돼 있어서 한 번 받으면 캐시에서 (오프라인에서도 앱이 열리게)
+  if (url.hostname === 'www.gstatic.com' && url.pathname.startsWith('/firebasejs/')) {
+    e.respondWith(caches.match(e.request).then(r => r || fetch(e.request).then(res => { const c = res.clone(); caches.open(VERSION).then(x => x.put(e.request, c)); return res; })));
+    return;
+  }
+  if (url.origin !== location.origin) return; // 구글 로그인·Firestore·폰트는 그대로 네트워크
   // 네트워크 우선, 실패하면 캐시 (배포한 새 버전이 바로 반영되도록)
   e.respondWith(
     fetch(e.request).then(r => { const copy = r.clone(); caches.open(VERSION).then(c => c.put(e.request, copy)); return r; })

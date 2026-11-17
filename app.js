@@ -30,8 +30,8 @@
     ['rs_irr', '비정기', 'reserve', 300000, ['의료', '선물·경조사', '공연·문화', '가전·IT', '여행', '기타']],
     ['sv_youth', '청년도약', 'saving', 700000, []],
     ['sv_house', '주택청약', 'saving', 20000, []],
-    ['sv_pension', '연금저축', 'saving', 500000, []],
-    ['sv_isa', 'ISA', 'saving', 584000, []],
+    ['sv_pension', '연금저축', 'saving', 250000, []],
+    ['sv_isa', 'ISA', 'saving', 834000, []],
     ['in_salary', '급여', 'income', 0, []],
     ['in_bonus', '성과급', 'income', 0, []],
     ['in_welfare', '복지포인트', 'income', 0, []],
@@ -100,8 +100,8 @@
     ['관리비(다빈치)', 'fx_mgmt', '', 25000, 21, 'm_hana', 'estimate'],
     ['청년도약계좌', 'sv_youth', '', 700000, 21, 'm_ibk', 'fixed'],
     ['주택청약', 'sv_house', '', 20000, 21, 'm_hana', 'fixed'],
-    ['연금저축', 'sv_pension', '', 500000, 21, 'm_hana', 'fixed'],
-    ['ISA', 'sv_isa', '', 584000, 21, 'm_hana', 'fixed'],
+    ['연금저축', 'sv_pension', '', 250000, 21, 'm_hana', 'fixed'],
+    ['ISA', 'sv_isa', '', 834000, 21, 'm_hana', 'fixed'],
     ['관리비', 'fx_mgmt', '', 100000, 22, 'm_hana', 'fixed'],
     ['롯데손해보험', 'fx_ins', '', 134012, 26, 'm_hana', 'fixed'],
     ['고보협', 'fx_dona', '', 50000, 26, 'm_hana', 'fixed']
@@ -157,29 +157,29 @@
     const t = now();
     return {
       v: 1,
-      cats: DEFAULT_CATS.map(([id, name, group, budget, subs], i) => ({ id, name, group, budget, subs, order: i, updatedAt: t })),
-      methods: DEFAULT_METHODS.map(([id, name, kind], i) => ({ id, name, kind, order: i, updatedAt: t })),
+      cats: DEFAULT_CATS.map(([id, name, group, budget, subs], i) => ({ id, name, group, budget, subs, order: i, updatedAt: 0 })),
+      methods: DEFAULT_METHODS.map(([id, name, kind], i) => ({ id, name, kind, order: i, updatedAt: 0 })),
       rules: [],   // 사용자 규칙 (기본 규칙보다 먼저 적용)
       recurring: defaultRecurring(todayStr().slice(0, 7)),
       tx: [],
-      settings: { startDay: 1, myName: '', reserveStart: todayStr().slice(0, 7), reserveOpening: { rs_gym: 0, rs_irr: 0 }, updatedAt: t }
+      settings: { startDay: 1, myName: '', reserveStart: todayStr().slice(0, 7), reserveOpening: { rs_gym: 0, rs_irr: 0 }, updatedAt: 0 }
     };
   }
 
   async function load() {
     S = (await kvGet('state')) || freshState();
     L = (await kvGet('local')) || { deviceId: uid(), clientId: '', lastSync: 0 };
-    if (!L.clientId && window.MONETA_CONFIG && MONETA_CONFIG.clientId) L.clientId = MONETA_CONFIG.clientId;
     UI.freshDevice = !(await kvGet('state'));
     // 새 기본 카테고리가 추가된 경우 보충
     if (!S.recurring) S.recurring = defaultRecurring(todayStr().slice(0, 7));
     const have = new Set(S.cats.map(c => c.id));
-    DEFAULT_CATS.forEach(([id, name, group, budget, subs], i) => { if (!have.has(id)) S.cats.push({ id, name, group, budget, subs, order: i, updatedAt: now() }); });
+    DEFAULT_CATS.forEach(([id, name, group, budget, subs], i) => { if (!have.has(id)) S.cats.push({ id, name, group, budget, subs, order: i, updatedAt: 0 }); });
+    normalizeDefaults(S);
   }
   let saveTimer = null;
   function persist(changed = true) {
     kvSet('state', S);
-    if (changed) { clearTimeout(saveTimer); saveTimer = setTimeout(() => Sync.auto(), 2500); }
+    if (changed) { clearTimeout(saveTimer); saveTimer = setTimeout(() => Sync.auto(), 800); }
   }
   function saveLocal() { kvSet('local', L); }
 
@@ -402,7 +402,7 @@
 
     if (!liveTx().length) {
       el.innerHTML = `<div class="card empty">
-        ${L.clientId ? `<div class="banner" style="text-align:left">이전에 쓰던 데이터가 있다면 먼저 <b>구글 드라이브에서 불러오세요</b>. 새로 입력한 내역과 합쳐지니까 데이터가 지워지지 않아요.<br><button class="btn" id="restoreBtn" style="margin-top:8px">드라이브에서 불러오기</button></div>` : ''}
+        ${fbConf() && !Sync.user ? `<div class="banner" style="text-align:left">이전에 쓰던 데이터가 있다면 먼저 <b>구글로 로그인</b>하세요. 저장된 데이터를 불러와서 새로 입력한 내역과 합쳐요.<br><button class="btn" id="restoreBtn" style="margin-top:8px">구글로 로그인하고 불러오기</button></div>` : ''}
         <b>아직 기록이 없어요</b>
         <p>아래 <b>+</b> 버튼으로 바로 입력하거나, 카드·통장 엑셀을 가져와서 시작하세요.</p>
         <div class="btns"><button class="btn" data-go="import">엑셀 가져오기</button><button class="btn ghost" id="loadSample">예시 데이터로 둘러보기</button></div>
@@ -435,6 +435,7 @@
         <div class="big ${left < 0 ? '' : ''}" style="${left < 0 ? 'color:var(--bad)' : ''}">${won(left)}<span style="font-size:16px;color:var(--muted)"> 원</span></div>
         <div class="meter ${s}"><i style="width:${Math.min(lSpent / (lBudget || 1), 1) * 100}%"></i><b style="left:${Math.min(pace, 1) * 100}%"></b></div>
         <div class="row"><span>${won(lSpent)} / ${won(lBudget)}</span><span>오늘까지 적정 ${won(fair)}</span></div>
+        ${!carry && S.settings.carry !== false ? `<div class="row"><span>지난달 이월</span><span class="num">${UI.ym <= (S.settings.carryStart || S.settings.reserveStart || UI.ym) ? '첫 달이라 없음 · 다음 달부터 반영' : '0'}</span></div>` : ''}
         ${carry ? `<div class="row"><span>지난달 ${carry > 0 ? '남은 돈' : '초과분'} 이월</span><span class="num" style="color:${carry > 0 ? 'var(--g-income)' : 'var(--bad)'}">${carry > 0 ? '+' : '−'}${won(Math.abs(carry))}</span></div>` : ''}
         <div class="row"><span>${p.start.slice(5).replace('-', '.')} ~ ${p.end.slice(5).replace('-', '.')} · ${elapsed}/${p.days}일</span><span>${daysLeft > 0 ? '남은 날 하루 ' + won(perDay) + '원' : '기간 종료'}</span></div>
       </div>
@@ -734,11 +735,10 @@
     const groups = ['living', 'fixed', 'reserve', 'saving'];
     const total = S.cats.filter(c => !c.deleted && groups.includes(c.group)).reduce((s, c) => s + (Number(c.budget) || 0), 0);
     el.innerHTML = `
-      <h2>동기화 (내 구글 드라이브)</h2>
+      <h2>동기화</h2>
       <div class="card set">
-        <div class="small muted">데이터는 이 기기에 저장되고, 연결하면 내 구글 드라이브의 앱 전용 숨김 폴더를 통해 다른 기기와 맞춰져요.</div>
-        <label class="field"><span class="lab">OAuth 클라이언트 ID</span><input id="clientId" value="${esc(L.clientId)}" placeholder="xxxx.apps.googleusercontent.com" autocomplete="off"></label>
-        <div class="btns"><button class="btn" id="syncNow">${Sync.token ? '지금 동기화' : '구글 연결하고 동기화'}</button>${Sync.token ? '<button class="btn ghost" id="syncOff">연결 해제</button>' : ''}</div>
+        <div class="small muted">${fbConf() ? (Sync.user ? `<b style="color:var(--fg)">${esc(Sync.user.email)}</b>로 로그인됨 · 입력하면 다른 기기에 바로 반영돼요` : '구글로 한 번 로그인하면 계속 유지되고, 기기끼리 실시간으로 맞춰져요.') : 'config.js에 Firebase 설정을 넣으면 동기화가 켜져요. (README 참고)'}</div>
+        ${fbConf() ? `<div class="btns">${Sync.user ? '<button class="btn" id="syncNow">지금 동기화</button><button class="btn ghost" id="syncOff">로그아웃</button>' : '<button class="btn" id="syncNow">구글로 로그인</button>'}</div>` : ''}
         <div class="small muted" id="syncInfo">${L.lastSync ? '마지막 동기화: ' + new Date(L.lastSync).toLocaleString('ko-KR') : '아직 동기화한 적 없음'}${Sync.lastError ? ' · 오류: ' + esc(Sync.lastError) : ''}</div>
       </div>
 
@@ -812,8 +812,7 @@
     $('#carryStart', el).onchange = e => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { S.settings.carryStart = e.target.value; S.settings.updatedAt = now(); persist(); } else toast('2026-11 형식으로 입력해 주세요'); };
     $('#resDay', el).onchange = e => { S.settings.reserveDay = Math.min(Math.max(parseInt(e.target.value, 10) || 21, 1), 31); e.target.value = S.settings.reserveDay; S.settings.updatedAt = now(); persist(); };
     $('#resStart', el).onchange = e => { if (/^\d{4}-\d{2}$/.test(e.target.value)) { S.settings.reserveStart = e.target.value; S.settings.updatedAt = now(); persist(); } else toast('2026-11 형식으로 입력해 주세요'); };
-    $('#clientId', el).onchange = e => { L.clientId = e.target.value.trim(); saveLocal(); };
-    $('#syncNow', el).onclick = () => { L.clientId = $('#clientId').value.trim(); saveLocal(); Sync.run(true); };
+    const sn = $('#syncNow', el); if (sn) sn.onclick = () => Sync.run(true);
     const so = $('#syncOff', el); if (so) so.onclick = () => { Sync.signOut(); renderSettings(); };
     $('#rAdd', el).onclick = () => { const kw = $('#rKw').value.trim(); if (!kw) return; addRule(kw, $('#rCat').value, ''); applyRuleToUncategorized(kw, $('#rCat').value, ''); persist(); renderSettings(); };
     $$('[data-rdel]', el).forEach(b => b.onclick = () => { const r = S.rules.find(x => x.id === b.dataset.rdel); r.deleted = true; r.updatedAt = now(); persist(); renderSettings(); });
@@ -842,7 +841,19 @@
     for (const x of b) { const y = m.get(x.id); if (!y || (x.updatedAt || 0) > (y.updatedAt || 0)) m.set(x.id, x); }
     return Array.from(m.values());
   }
+  function normalizeDefaults(x) {
+    if (!x) return x;
+    const dc = {}; DEFAULT_CATS.forEach(([id, name, group, budget]) => { dc[id] = { name, group, budget }; });
+    const old = { sv_pension: 500000, sv_isa: 584000 };   // 예전 기본값도 '안 고친 값'으로 취급
+    (x.cats || []).forEach(c => { const d = dc[c.id]; if (d && c.name === d.name && (c.budget === d.budget || c.budget === old[c.id])) c.updatedAt = 0; });
+    const dm = {}; DEFAULT_METHODS.forEach(([id, name]) => { dm[id] = name; });
+    (x.methods || []).forEach(m => { if (dm[m.id] === m.name) m.updatedAt = 0; });
+    const st = x.settings;
+    if (st && !st.myName && (st.startDay || 1) == 1 && st.carry === undefined && !st.carryStart && !st.reserveDay && !(st.reserveOpening && (st.reserveOpening.rs_gym || st.reserveOpening.rs_irr))) st.updatedAt = 0;
+    return x;
+  }
   function merge(a, b) {
+    normalizeDefaults(a); normalizeDefaults(b);
     return {
       v: 1,
       cats: mergeList(a.cats, b.cats), methods: mergeList(a.methods, b.methods), rules: mergeList(a.rules, b.rules), tx: mergeList(a.tx, b.tx), recurring: mergeList(a.recurring, b.recurring),
@@ -850,70 +861,105 @@
     };
   }
 
-  // ---------- 구글 드라이브 동기화 ----------
+  // ---------- Firebase 동기화 (구글 로그인 유지 + 실시간) ----------
+  const FB_VER = '10.12.2';
+  const COLS = ['tx', 'cats', 'methods', 'rules', 'recurring'];
+  const fbConf = () => (window.MONETA_CONFIG && MONETA_CONFIG.firebase && MONETA_CONFIG.firebase.apiKey) ? MONETA_CONFIG.firebase : null;
   const Sync = {
-    token: null, exp: 0, busy: false, lastError: '', client: null, fileId: null,
+    user: null, db: null, lastError: '', unsubs: [], loaded: {}, pushing: false, again: false, started: false,
+    get token() { return !!this.user; },
     status(s, cls) { const b = $('#syncBtn'); if (b) { b.textContent = s; b.className = 'sync ' + (cls || ''); } },
-    async loadGis() {
-      if (window.google && google.accounts && google.accounts.oauth2) return;
-      await new Promise((res, rej) => { const s = document.createElement('script'); s.src = 'https://accounts.google.com/gsi/client'; s.onload = res; s.onerror = () => rej(new Error('구글 로그인 스크립트를 불러오지 못했어요')); document.head.appendChild(s); });
+    async loadSdk() {
+      if (window.firebase && firebase.firestore) return;
+      for (const m of ['app', 'auth', 'firestore']) {
+        await new Promise((res, rej) => { const sc = document.createElement('script'); sc.src = `https://www.gstatic.com/firebasejs/${FB_VER}/firebase-${m}-compat.js`; sc.onload = res; sc.onerror = () => rej(new Error('Firebase를 불러오지 못했어요 (인터넷 연결 확인)')); document.head.appendChild(sc); });
+      }
     },
-    async getToken(interactive) {
-      if (this.token && Date.now() < this.exp - 60000) return this.token;
-      try { const c = JSON.parse(localStorage.getItem('salim-token') || 'null'); if (c && Date.now() < c.exp - 60000) { this.token = c.t; this.exp = c.exp; return this.token; } } catch (e) {}
-      if (!interactive) return null;
-      if (!L.clientId) throw new Error('설정에서 OAuth 클라이언트 ID를 먼저 입력해 주세요');
-      await this.loadGis();
-      return new Promise((res, rej) => {
-        const tc = google.accounts.oauth2.initTokenClient({
-          client_id: L.clientId, scope: 'openid email https://www.googleapis.com/auth/drive.appdata',
-          callback: r => { if (r.error) return rej(new Error(r.error)); this.token = r.access_token; this.exp = Date.now() + (r.expires_in || 3600) * 1000; try { localStorage.setItem('salim-token', JSON.stringify({ t: this.token, exp: this.exp })); } catch (e) {} if (!L.email) fetch('https://www.googleapis.com/oauth2/v3/userinfo', { headers: { Authorization: 'Bearer ' + this.token } }).then(x => x.json()).then(u => { if (u.email) { L.email = u.email; saveLocal(); } }).catch(() => {}); res(this.token); },
-          error_callback: e => rej(new Error(e && e.type === 'popup_closed' ? '로그인 창이 닫혔어요' : '로그인하지 못했어요'))
-        });
-        tc.requestAccessToken(Object.assign({ prompt: L.everConnected ? '' : 'consent' }, L.email ? { login_hint: L.email, hint: L.email } : {}));
-      });
-    },
-    async api(url, opt = {}) {
-      const r = await fetch(url, Object.assign({}, opt, { headers: Object.assign({ Authorization: 'Bearer ' + this.token }, opt.headers || {}) }));
-      if (r.status === 401) { this.token = null; try { localStorage.removeItem('salim-token'); } catch (e) {} throw new Error('로그인이 만료됐어요. 다시 연결해 주세요'); }
-      if (!r.ok) throw new Error('드라이브 오류 ' + r.status);
-      return r;
-    },
-    async run(interactive) {
-      if (this.busy) return; this.busy = true; this.status('동기화 중…');
+    async init() {
+      const conf = fbConf();
+      if (!conf) { this.status('로컬'); return; }
       try {
-        const tk = await this.getToken(interactive);
-        if (!tk) { this.status(L.everConnected ? '탭해서 동기화' : L.clientId ? '연결 필요' : '로컬', ''); return; }
-        if (!this.fileId) {
-          const q = encodeURIComponent("name='salim-ledger.json'");
-          const r = await (await this.api('https://www.googleapis.com/drive/v3/files?spaces=appDataFolder&fields=files(id,modifiedTime)&q=' + q)).json();
-          this.fileId = r.files && r.files[0] ? r.files[0].id : null;
-        }
-        let merged = S;
-        if (this.fileId) {
-          const remote = await (await this.api('https://www.googleapis.com/drive/v3/files/' + this.fileId + '?alt=media')).json();
-          merged = merge(S, remote);
-        }
-        S = merged; generateRecurring(); await kvSet('state', S);
-        const body = JSON.stringify(S);
-        if (this.fileId) {
-          await this.api('https://www.googleapis.com/upload/drive/v3/files/' + this.fileId + '?uploadType=media', { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body });
-        } else {
-          const bd = 'salim' + uid();
-          const mp = `--${bd}\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n${JSON.stringify({ name: 'salim-ledger.json', parents: ['appDataFolder'] })}\r\n--${bd}\r\nContent-Type: application/json\r\n\r\n${body}\r\n--${bd}--`;
-          const r = await (await this.api('https://www.googleapis.com/upload/drive/v3/files?uploadType=multipart&fields=id', { method: 'POST', headers: { 'Content-Type': 'multipart/related; boundary=' + bd }, body: mp })).json();
-          this.fileId = r.id;
-        }
-        L.lastSync = Date.now(); L.everConnected = true; saveLocal(); this.lastError = '';
-        this.status('동기화됨', 'on');
-        render(true);
-      } catch (e) {
-        console.error(e); this.lastError = e.message; this.status('동기화 오류', 'err');
-        if (interactive) toast(e.message);
-      } finally { this.busy = false; }
+        await this.loadSdk();
+        if (!firebase.apps.length) firebase.initializeApp(conf);
+        this.db = firebase.firestore();
+        firebase.auth().onAuthStateChanged(u => {
+          this.user = u;
+          if (u) { L.email = u.email; L.everConnected = true; saveLocal(); this.start(); }
+          else { this.stop(); this.status('로그인 필요'); }
+          if (UI.tab === 'settings') renderSettings();
+          if (UI.tab === 'home') renderHome();
+        });
+        this.started = true;
+      } catch (e) { console.error(e); this.lastError = e.message; this.status('오프라인'); }
     },
-    auto() { if (this.token || L.everConnected) this.run(false); },
-    signOut() { try { if (this.token && window.google) google.accounts.oauth2.revoke(this.token); } catch (e) {} this.token = null; this.fileId = null; L.everConnected = false; saveLocal(); try { localStorage.removeItem('salim-token'); } catch (e) {} this.status('로컬'); }
+    async signIn() {
+      if (!fbConf()) { toast('config.js에 Firebase 설정을 먼저 넣어주세요'); return; }
+      if (!this.started) await this.init();
+      if (!window.firebase) return;
+      const p = new firebase.auth.GoogleAuthProvider();
+      if (L.email) p.setCustomParameters({ login_hint: L.email });
+      try { await firebase.auth().signInWithPopup(p); }
+      catch (e) {
+        if (/popup-blocked|operation-not-supported/.test(e.code || '')) await firebase.auth().signInWithRedirect(p);
+        else if (!/popup-closed|cancelled-popup/.test(e.code || '')) { this.lastError = e.message; toast('로그인하지 못했어요: ' + (e.code || e.message)); }
+      }
+    },
+    col(n) { return this.db.collection('users').doc(this.user.uid).collection(n); },
+    pushed() { L.pushed = L.pushed || {}; COLS.concat('settings').forEach(n => { L.pushed[n] = L.pushed[n] || {}; }); return L.pushed; },
+    start() {
+      this.stop(); this.loaded = {}; this.status('불러오는 중…');
+      const P = this.pushed();
+      const done = n => { this.loaded[n] = true; if (COLS.concat('settings').every(k => this.loaded[k])) { generateRecurring(); this.push(); } };
+      const onErr = e => { console.error(e); this.lastError = e.message; this.status('동기화 오류', 'err'); };
+      COLS.forEach(n => {
+        this.unsubs.push(this.col(n).onSnapshot(snap => {
+          let changed = false; S[n] = S[n] || [];
+          snap.docChanges().forEach(ch => {
+            if (ch.type === 'removed') return;
+            const r = ch.doc.data(); if (!r || !r.id) return;
+            const i = S[n].findIndex(x => x.id === r.id);
+            if (i < 0) { S[n].push(r); changed = true; }
+            else if ((r.updatedAt || 0) > (S[n][i].updatedAt || 0)) { S[n][i] = r; changed = true; }
+            P[n][r.id] = Math.max(P[n][r.id] ?? -1, r.updatedAt || 0);
+          });
+          if (changed) { kvSet('state', S); render(true); }
+          done(n);
+        }, onErr));
+      });
+      this.unsubs.push(this.col('meta').doc('settings').onSnapshot(d => {
+        const r = d.exists ? d.data() : null;
+        if (r && (r.updatedAt || 0) > (S.settings.updatedAt || 0)) { S.settings = r; kvSet('state', S); render(true); }
+        if (r) P.settings.s = Math.max(P.settings.s ?? -1, r.updatedAt || 0);
+        done('settings');
+      }, onErr));
+    },
+    stop() { this.unsubs.forEach(u => { try { u(); } catch (e) {} }); this.unsubs = []; },
+    async push() {
+      if (!this.user || !COLS.concat('settings').every(k => this.loaded[k])) return;
+      if (this.pushing) { this.again = true; return; }
+      this.pushing = true; this.status('동기화 중…');
+      try {
+        const P = this.pushed();
+        const ops = [];
+        COLS.forEach(n => (S[n] || []).forEach(r => { if ((r.updatedAt || 0) > (P[n][r.id] ?? -1)) ops.push([n, r]); }));
+        const setPend = (S.settings.updatedAt || 0) > (P.settings.s ?? -1);
+        for (let i = 0; i < ops.length || (i === 0 && setPend); i += 400) {
+          const batch = this.db.batch(); const chunk = ops.slice(i, i + 400);
+          chunk.forEach(([n, r]) => batch.set(this.col(n).doc(r.id), JSON.parse(JSON.stringify(r))));
+          if (i === 0 && setPend) batch.set(this.col('meta').doc('settings'), JSON.parse(JSON.stringify(S.settings)));
+          await batch.commit();
+          chunk.forEach(([n, r]) => { P[n][r.id] = r.updatedAt || 0; });
+          if (i === 0 && setPend) P.settings.s = S.settings.updatedAt || 0;
+          saveLocal();
+        }
+        L.lastSync = Date.now(); saveLocal(); this.lastError = '';
+        this.status('동기화됨', 'on');
+      } catch (e) { console.error(e); this.lastError = e.message; this.status('동기화 오류', 'err'); }
+      finally { this.pushing = false; if (this.again) { this.again = false; this.push(); } }
+    },
+    run(interactive) { if (this.user) this.push(); else if (interactive) this.signIn(); },
+    auto() { if (this.user) this.push(); },
+    async signOut() { try { await firebase.auth().signOut(); } catch (e) {} this.user = null; this.stop(); L.pushed = {}; saveLocal(); this.status('로그인 필요'); }
   };
 
   // ---------- 예시 데이터 ----------
@@ -962,14 +1008,14 @@
     $('#nextM').onclick = () => { UI.ym = shiftYm(UI.ym, 1); render(); };
     $('#syncBtn').onclick = () => Sync.run(true);
     document.addEventListener('visibilitychange', () => { if (document.visibilityState === 'visible') { if (generateRecurring()) render(); Sync.auto(); } });
-    setInterval(() => { if (document.visibilityState === 'visible') Sync.auto(); }, 60000);
-    Sync.status(L.everConnected ? '탭해서 동기화' : '로컬');
+    
+    Sync.status(fbConf() ? '연결 중…' : '로컬');
     go('home');
-    Sync.auto();
+    Sync.init();
     try { if (navigator.storage && navigator.storage.persist) navigator.storage.persist(); } catch (e) {}
     if ('serviceWorker' in navigator && location.protocol === 'https:') { navigator.serviceWorker.register('sw.js').catch(() => {}); }
   }
   // 테스트용 노출
-  window.Salim = { parseImport, classify, get state() { return S; } };
+  window.Salim = { parseImport, classify, merge, freshState, get state() { return S; } };
   init();
 })();
