@@ -28,11 +28,11 @@
     ['fx_gye', '모임계', 'fixed', 20000, []],
     ['fx_union', '노조비', 'fixed', 60000, []],
     ['rs_gym', '운동', 'reserve', 420000, ['PT', '기타운동']],
-    ['rs_irr', '비정기', 'reserve', 300000, ['의료', '선물·경조사', '공연·문화', '가전·IT', '여행', '기타']],
+    ['rs_irr', '비정기', 'reserve', 360000, ['의료', '선물·경조사', '공연·문화', '가전·IT', '여행', '기타']],
     ['sv_youth', '청년도약', 'saving', 700000, []],
     ['sv_house', '주택청약', 'saving', 20000, []],
     ['sv_pension', '연금저축', 'saving', 250000, []],
-    ['sv_isa', 'ISA', 'saving', 774000, []],
+    ['sv_isa', 'ISA', 'saving', 714000, []],
     ['in_salary', '급여', 'income', 0, []],
     ['in_bonus', '성과급', 'income', 0, []],
     ['in_welfare', '복지포인트', 'income', 0, []],
@@ -90,22 +90,22 @@
   ];
   // 반복 기록: [이름, 카테고리, 하위, 금액, 매월 일, 결제수단, 'fixed'=확정 | 'estimate'=예정(금액 확인 필요)]
   const DEFAULT_RECURRING = [
-    ['급여', 'in_salary', '', 4150000, 20, 'm_hana', 'estimate'],
-    ['구내식당·카페', 'lv_food', '구내식당', 80000, 20, 'm_payroll', 'estimate'],
-    ['노조비', 'fx_union', '', 60000, 20, 'm_payroll', 'estimate'],
+    ['급여', 'in_salary', '', 4150000, 20, 'm_hana', 'fixed'],
+    ['구내식당·카페', 'lv_food', '구내식당', 80000, 20, 'm_payroll', 'fixed'],
+    ['노조비', 'fx_union', '', 60000, 20, 'm_payroll', 'fixed'],
     ['나비야사랑해', 'fx_dona', '', 30000, 1, 'm_hana', 'fixed'],
     ['모임계', 'fx_gye', '', 20000, 1, 'm_hana', 'fixed'],
-    ['전세대출 이자', 'fx_loan', '', 220000, 12, 'm_hana', 'estimate'],
-    ['우리카드 교통', 'fx_trans', '대중교통', 100000, 14, 'm_woori', 'estimate'],
-    ['통신비', 'fx_tel', '', 6050, 15, 'm_shinhan', 'estimate'],
-    ['도시가스', 'fx_util', '도시가스', 10000, 19, 'm_shinhan', 'estimate'],
+    ['전세대출 이자', 'fx_loan', '', 220000, 12, 'm_hana', 'fixed'],
+    ['우리카드 교통', 'fx_trans', '대중교통', 100000, 14, 'm_woori', 'fixed'],
+    ['통신비', 'fx_tel', '', 6050, 15, 'm_shinhan', 'fixed'],
+    ['도시가스', 'fx_util', '도시가스', 10000, 19, 'm_shinhan', 'fixed'],
     ['DB손해보험', 'fx_ins', '', 30880, 21, 'm_hana', 'fixed'],
-    ['DB손해보험(2)', 'fx_ins', '', 14220, 21, 'm_hana', 'estimate'],
-    ['관리비(다빈치)', 'fx_mgmt', '', 25000, 21, 'm_hana', 'estimate'],
+    ['DB손해보험(2)', 'fx_ins', '', 14220, 21, 'm_hana', 'fixed'],
+    ['관리비(다빈치)', 'fx_mgmt', '', 25000, 21, 'm_hana', 'fixed'],
     ['청년도약계좌', 'sv_youth', '', 700000, 21, 'm_ibk', 'fixed'],
     ['주택청약', 'sv_house', '', 20000, 21, 'm_hana', 'fixed'],
     ['연금저축', 'sv_pension', '', 250000, 21, 'm_hana', 'fixed'],
-    ['ISA', 'sv_isa', '', 774000, 21, 'm_hana', 'fixed'],
+    ['ISA', 'sv_isa', '', 714000, 21, 'm_hana', 'fixed'],
     ['관리비', 'fx_mgmt', '', 100000, 22, 'm_hana', 'fixed'],
     ['롯데손해보험', 'fx_ins', '', 134012, 26, 'm_hana', 'fixed'],
     ['고보협', 'fx_dona', '', 50000, 26, 'm_hana', 'fixed']
@@ -115,7 +115,7 @@
   // 자산: kind = cash(현금성) reserve(적립 통장, 앱이 계산) saving(적금·청약) invest(투자) deposit(보증금) debt(부채)
   // link가 있으면 기준 금액 + 기준일 이후 그 카테고리로 넣은 돈을 더해서 현재 금액을 계산
   const DEFAULT_ASSETS = [
-    ['a_emergency', '비상금 (파킹)', 'cash', ''], ['a_gym', '운동 통장', 'reserve', 'rs_gym'], ['a_irr', '비정기 통장', 'reserve', 'rs_irr'],
+    ['a_emergency', '비상금 (파킹)', 'cash', ''], ['a_gym', '적립 통장 (운동+비정기)', 'reserve', 'rs_gym,rs_irr'],
     ['a_youth', '청년도약계좌', 'saving', 'sv_youth'], ['a_house', '주택청약', 'saving', 'sv_house'],
     ['a_pension', '연금저축', 'invest', 'sv_pension'], ['a_isa', 'ISA', 'invest', 'sv_isa'],
     ['a_deposit', '전세보증금', 'deposit', ''], ['a_loan', '전세대출', 'debt', '']
@@ -200,6 +200,7 @@
     const hr = new Set(S.recurring.map(r => r.id));
     defaultRecurring(todayStr().slice(0, 7)).forEach(r => { if (!hr.has(r.id)) S.recurring.push(r); });
     migratePayroll(S);
+    migrateV17(S);
   }
   let saveTimer = null;
   function persist(changed = true) {
@@ -406,8 +407,9 @@
     }
     return carry;
   }
+  const reserveAuto = a => String(a.link).split(',').filter(Boolean).reduce((t, id) => t + reserveBalance(id), 0);
   function assetValue(a) {
-    if (a.kind === 'reserve' && a.link) return reserveBalance(a.link);
+    if (a.kind === 'reserve' && a.link) return reserveAuto(a) + (Number(a.adjust) || 0);
     let v = Number(a.base) || 0;
     if (a.link) v += liveTx().filter(t => t.cat === a.link && t.date >= (a.baseDate || '0000') && !t.pending).reduce((s, t) => s + t.amount, 0);
     return a.kind === 'debt' ? -Math.abs(v) : v;
@@ -556,7 +558,7 @@
   // ----- 자산 탭 -----
   function assetChange(a) {   // 이번 기간 변화
     const st = stats(UI.ym);
-    if (a.kind === 'reserve' && a.link) { const c = cat(a.link); return (reservedThisMonth() ? (c ? c.budget : 0) : 0) - (st.byCat[a.link] || 0); }
+    if (a.kind === 'reserve' && a.link) return String(a.link).split(',').filter(Boolean).reduce((t, id) => { const c = cat(id); return t + (reservedThisMonth() ? (c ? c.budget : 0) : 0) - (st.byCat[id] || 0); }, 0);
     if (a.link) return st.txs.filter(t => t.cat === a.link && !t.pending && t.date >= (a.baseDate || '0000')).reduce((s, t) => s + t.amount, 0);
     return null;
   }
@@ -585,7 +587,7 @@
       </div>
       <div class="card">
         <div class="card-h"><b>항목별</b><span class="muted small">이번 달 변화</span></div>
-        ${as.filter(x => x.v || x.d).map(x => `<div class="arow"><span class="dot" style="background:${ASSET_KIND[x.a.kind][1]}"></span><span class="an">${esc(x.a.name)}<small>${ASSET_KIND[x.a.kind][0]}${x.a.link && x.a.kind !== 'reserve' ? ' · 납입 자동 반영' : x.a.kind === 'reserve' ? ' · 자동 계산' : ' · 직접 입력'}</small></span>
+        ${as.filter(x => x.v || x.d).map(x => `<div class="arow"><span class="dot" style="background:${ASSET_KIND[x.a.kind][1]}"></span><span class="an">${esc(x.a.name)}<small>${ASSET_KIND[x.a.kind][0]}${x.a.link && x.a.kind !== 'reserve' ? ' · 납입 자동 반영' : x.a.kind === 'reserve' ? ' · 자동 계산 + 수정 가능' : ' · 직접 입력'}</small></span>
           <span class="av"><b class="num" style="${x.v < 0 ? 'color:var(--bad)' : ''}">${M(x.v)}</b>${x.d ? `<small class="num" style="color:${x.d > 0 ? 'var(--ok)' : 'var(--bad)'}">${x.d > 0 ? '+' : '−'}${hide ? '•••' : won(Math.abs(x.d))}</small>` : ''}</span></div>`).join('')}
         <button class="btn ghost block" data-go="settings" data-spage="2" style="margin-top:10px">금액 수정하기</button>
       </div>`}
@@ -692,7 +694,7 @@
   // ---------- 렌더: 내역 ----------
   function renderList() {
     const el = $('#view-list');
-    const fl = [['all', '전체'], ['spend', '지출만'], ['pending', '확인 필요'], ['unc', '미분류'], ['living', '생활'], ['fixed', '고정'], ['reserve', '적립'], ['saving', '저축'], ['income', '수입'], ['transfer', '이체·제외']];
+    const fl = [['all', '전체'], ['spend', '지출만'], ['auto', '자동 반영'], ['pending', '확인 필요'], ['unc', '미분류'], ['living', '생활'], ['fixed', '고정'], ['reserve', '적립'], ['saving', '저축'], ['income', '수입'], ['transfer', '이체·제외']];
     if (!$('#listBody', el)) {
       el.innerHTML = `
         <div style="display:flex;gap:8px"><input class="search" id="q" type="search" placeholder="가맹점·메모·카테고리 검색" aria-label="검색" autocomplete="off" style="flex:1"><button class="btn ghost" data-go="import" style="white-space:nowrap">엑셀 가져오기</button></div>
@@ -723,16 +725,19 @@
     const st = stats(UI.ym);
     let txs = st.txs.slice();
     const f = UI.filter;
+    const nAuto = txs.filter(t => t.source === 'recurring' && !t.pending).length;
+    if (f === 'all' || f === 'spend') txs = txs.filter(t => t.source !== 'recurring' || t.pending);
+    if (f === 'auto') txs = txs.filter(t => t.source === 'recurring');
     if (f === 'unc') txs = txs.filter(t => !cat(t.cat));
     else if (f === 'pending') txs = txs.filter(t => t.pending);
     else if (f === 'spend') txs = txs.filter(isSpend);
-    else if (f !== 'all') txs = txs.filter(t => { const c = cat(t.cat); return c && (c.group === f); });
+    else if (f !== 'all' && f !== 'auto') txs = txs.filter(t => { const c = cat(t.cat); return c && (c.group === f); });
     if (UI.q) { const q = UI.q.toLowerCase(); txs = txs.filter(t => (t.merchant + ' ' + (t.memo || '') + ' ' + (cat(t.cat) ? cat(t.cat).name : '') + ' ' + (t.sub || '')).toLowerCase().includes(q)); }
     const sort = UI.lsort || 'new', grp = UI.lgroup || 'date';
     const cmp = sort === 'big' ? (a, b) => b.amount - a.amount : sort === 'small' ? (a, b) => a.amount - b.amount : (a, b) => (b.date + (b.time || '')).localeCompare(a.date + (a.time || '')) || b.createdAt - a.createdAt;
     txs.sort(cmp);
     const spendSum = txs.filter(isSpend).reduce((s, t) => s + t.amount, 0);
-    $('#listSum').textContent = `${txs.length}건${spendSum ? ' · 지출 합계 ' + won(spendSum) + '원' : ''}`;
+    $('#listSum').textContent = `${txs.length}건${spendSum ? ' · 지출 합계 ' + won(spendSum) + '원' : ''}${(f === 'all' || f === 'spend') && nAuto ? ' · 고정 자동 ' + nAuto + '건은 \'자동 반영\'에서' : ''}`;
     if (!txs.length) { body.innerHTML = `<div class="card empty"><p>${f === 'unc' ? '미분류 내역이 없어요.' : f === 'pending' ? '확인할 예정 기록이 없어요.' : UI.q ? '검색 결과가 없어요.' : '이 기간에 내역이 없어요.'}</p></div>`; return; }
     const wd = ['일', '월', '화', '수', '목', '금', '토'];
     if (grp === 'date' && sort === 'new') {
@@ -954,10 +959,10 @@
 
 `, `      <h2>자산 <span class="muted small" style="font-weight:400">지금 잔액을 입력하면 기준일이 오늘로 바뀌어요</span></h2>
       <div class="card set">
-        <div class="small muted">적립 통장은 앱이 자동 계산해요. 저축·투자는 입력한 금액에 그 뒤로 매달 넣은 돈이 더해져요. 투자는 가끔 평가금액으로 다시 입력해 주세요.</div>
+        <div class="small muted">적립 통장은 앱이 자동 계산하고, 실제 잔액과 다르면 금액을 고치세요 (그 뒤로도 자동 계산이 이어져요). 저축·투자는 입력한 금액에 그 뒤로 매달 넣은 돈이 더해져요. 투자는 가끔 평가금액으로 다시 입력해 주세요.</div>
         ${liveAssets().map(a => `<div class="set-row" style="flex-wrap:wrap">
           <span style="flex:1 1 150px;min-width:0"><b style="font-weight:500">${esc(a.name)}</b> <span class="muted small">${ASSET_KIND[a.kind][0]}${a.link && a.kind !== 'reserve' ? ' · ' + esc(a.baseDate.slice(5).replace('-', '/')) + ' 기준 + 납입' : ''}</span><br><span class="small">현재 <b class="num">${won(assetValue(a))}</b>원</span></span>
-          ${a.kind === 'reserve' ? '<span class="muted small">자동 계산</span>' : `<input inputmode="numeric" data-abase="${a.id}" value="${won(a.base)}" aria-label="${esc(a.name)} 금액">`}
+          ${a.kind === 'reserve' ? `<input inputmode="numeric" data-ares="${a.id}" value="${won(assetValue(a))}" aria-label="${esc(a.name)} 잔액">` : `<input inputmode="numeric" data-abase="${a.id}" value="${won(a.base)}" aria-label="${esc(a.name)} 금액">`}
           <button data-adel="${a.id}" style="background:none;border:0;color:var(--bad);font-size:13px">삭제</button></div>`).join('')}
         <div class="row2"><input class="search" id="aName" placeholder="새 자산 이름 (예: 주식 계좌)"><select class="search" id="aKind">${Object.keys(ASSET_KIND).filter(k => k !== 'reserve').map(k => `<option value="${k}">${ASSET_KIND[k][0]}</option>`).join('')}</select></div>
         <div class="row2"><input class="search" id="aBase" inputmode="numeric" placeholder="현재 금액"><select class="search" id="aLink"><option value="">자동 더하기 없음</option>${catsOf(['saving']).map(c => `<option value="${c.id}">${esc(c.name)} 납입 자동 더하기</option>`).join('')}</select></div>
@@ -965,10 +970,10 @@
       </div>
 `, `      <h2>반복 기록 <span class="muted small" style="font-weight:400">매월 그 날짜가 되면 자동 기록</span></h2>
       <div class="card set">
-        <div class="small muted">확정: 정한 금액 그대로 기록 · 예정: 지난달 금액으로 기록하고 "확인 필요"로 표시 (실제 금액으로 고치거나 엑셀을 가져오면 확정)</div>
+        <div class="small muted">정한 날짜에 정한 금액으로 자동 반영돼요. 기록은 따로 안 해도 되고, 금액이 다른 달만 내역에서 그 항목을 눌러 고치세요. '예정'으로 두면 "확인 필요"로 표시돼요.</div>
         ${(S.recurring || []).filter(r => !r.deleted).sort((a, b) => a.day - b.day).map(r => `<div class="set-row" style="flex-wrap:wrap">
           <span style="flex:1 1 100px;min-width:0"><b style="font-weight:500">${esc(r.name)}</b><br><span class="small muted">매월 <input inputmode="numeric" data-rday="${r.id}" value="${r.day}" class="dayin" aria-label="${esc(r.name)} 날짜">일</span></span>
-          <select data-rmode="${r.id}" class="search" style="width:auto;padding:5px 4px"><option value="fixed" ${r.mode === 'fixed' ? 'selected' : ''}>확정</option><option value="estimate" ${r.mode === 'estimate' ? 'selected' : ''}>예정</option><option value="off" ${!r.active ? 'selected' : ''}>중지</option></select>
+          <select data-rmode="${r.id}" class="search" style="width:auto;padding:5px 4px"><option value="fixed" ${r.mode === 'fixed' ? 'selected' : ''}>자동</option><option value="estimate" ${r.mode === 'estimate' ? 'selected' : ''}>예정</option><option value="off" ${!r.active ? 'selected' : ''}>중지</option></select>
           <input inputmode="numeric" data-ramt="${r.id}" value="${won(r.amount)}" aria-label="${esc(r.name)} 금액" style="width:96px">
           <button data-rcdel="${r.id}" style="background:none;border:0;color:var(--bad);font-size:13px;padding:0 2px">삭제</button></div>`).join('')}
         <div class="row2"><input class="search" id="rcName" placeholder="이름 (예: 넷플릭스)"><select class="search" id="rcCat">${S.cats.filter(c => !c.deleted).sort((a, b) => a.order - b.order).map(c => `<option value="${c.id}">${GROUPS[c.group].name} · ${esc(c.name)}</option>`).join('')}</select></div>
@@ -986,7 +991,7 @@
 
 `, `      <h2>결제수단</h2>
       <div class="card set">
-        ${S.methods.filter(m => !m.deleted).sort((a, b) => a.order - b.order).map(m => `<div class="set-row"><input class="wide" data-mname="${m.id}" value="${esc(m.name)}" aria-label="결제수단 이름"><span class="muted small" style="white-space:nowrap">${{ check: '체크', credit: '신용', transfer: '이체', cash: '현금' }[m.kind]}</span></div>`).join('')}
+        ${S.methods.filter(m => !m.deleted).sort((a, b) => a.order - b.order).map(m => `<div class="set-row"><input class="wide" data-mname="${m.id}" value="${esc(m.name)}" aria-label="결제수단 이름"><select data-mkind="${m.id}" class="search" style="width:auto;padding:5px 4px">${[['check', '체크'], ['credit', '신용'], ['transfer', '이체'], ['cash', '현금']].map(([k, n]) => `<option value="${k}" ${m.kind === k ? 'selected' : ''}>${n}</option>`).join('')}</select><button data-mdel="${m.id}" style="background:none;border:0;color:var(--bad);font-size:13px;padding:0 2px">삭제</button></div>`).join('')}
         <div class="row2"><input class="search" id="mNew" placeholder="새 결제수단 이름"><select class="search" id="mKind"><option value="check">체크</option><option value="credit">신용</option><option value="transfer">이체</option><option value="cash">현금</option></select></div>
         <button class="btn ghost" id="mAdd">결제수단 추가</button>
       </div>
@@ -997,7 +1002,7 @@
         <button class="btn danger" id="wipe">이 기기의 데이터 모두 지우기</button>
       </div>
       <p class="small muted" id="persistInfo" style="text-align:center"></p>
-      <p class="small muted" style="text-align:center">Moneta v16 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
+      <p class="small muted" style="text-align:center">Moneta v18 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
 `], 'spage');
     try { if (navigator.storage && navigator.storage.persisted) navigator.storage.persisted().then(ok => { const pi = $('#persistInfo'); if (pi) pi.textContent = ok ? '이 기기 저장소: 보존 모드 (브라우저가 임의로 지우지 않음)' : '이 기기 저장소: 일반 모드 — 저장 공간이 부족하면 브라우저가 지울 수 있어요. 동기화를 꼭 켜두세요.'; }); } catch (e) {}
     bindPagerG(el, 'spager', 'spage');
@@ -1005,6 +1010,7 @@
     $$('[data-budget]', el).forEach(inp => numIn(inp, v => { const c = cat(inp.dataset.budget); c.budget = v; c.updatedAt = now(); renderSettings(); }));
     $$('[data-open]', el).forEach(inp => numIn(inp, v => { S.settings.reserveOpening = Object.assign({}, S.settings.reserveOpening, { [inp.dataset.open]: v }); S.settings.updatedAt = now(); }));
     $$('[data-abase]', el).forEach(inp => numIn(inp, v => { const a = S.assets.find(x => x.id === inp.dataset.abase); a.base = v; a.baseDate = todayStr(); a.updatedAt = now(); renderSettings(); }));
+    $$('[data-ares]', el).forEach(inp => numIn(inp, v => { const a = S.assets.find(x => x.id === inp.dataset.ares); a.adjust = v - reserveAuto(a); a.updatedAt = now(); renderSettings(); }));
     $$('[data-adel]', el).forEach(b => b.onclick = () => { const a = S.assets.find(x => x.id === b.dataset.adel); a.deleted = true; a.updatedAt = now(); persist(); renderSettings(); });
     $('#aAdd', el).onclick = () => { const n = $('#aName').value.trim(); if (!n) { toast('자산 이름을 입력해 주세요'); return; } S.assets.push({ id: 'a_' + uid(), name: n, kind: $('#aKind').value, link: $('#aLink').value, base: Number($('#aBase').value.replace(/[^\d]/g, '')) || 0, baseDate: todayStr(), order: S.assets.length, updatedAt: now() }); persist(); renderSettings(); toast('추가했어요'); };
     $$('[data-rmode]', el).forEach(sel => sel.onchange = () => { const r = S.recurring.find(x => x.id === sel.dataset.rmode); if (sel.value === 'off') r.active = false; else { r.active = true; r.mode = sel.value; } r.updatedAt = now(); persist(); generateRecurring(); });
@@ -1028,6 +1034,8 @@
     $('#rAdd', el).onclick = () => { const kw = $('#rKw').value.trim(); if (!kw) return; addRule(kw, $('#rCat').value, ''); applyRuleToUncategorized(kw, $('#rCat').value, ''); persist(); renderSettings(); };
     $$('[data-rdel]', el).forEach(b => b.onclick = () => { const r = S.rules.find(x => x.id === b.dataset.rdel); r.deleted = true; r.updatedAt = now(); persist(); renderSettings(); });
     $$('[data-mname]', el).forEach(inp => inp.onchange = () => { const m = method(inp.dataset.mname); m.name = inp.value.trim() || m.name; m.updatedAt = now(); persist(); });
+    $$('[data-mkind]', el).forEach(sel => sel.onchange = () => { const m = method(sel.dataset.mkind); m.kind = sel.value; m.updatedAt = now(); persist(); });
+    $$('[data-mdel]', el).forEach(b => b.onclick = () => { const m = method(b.dataset.mdel); m.deleted = true; m.updatedAt = now(); persist(); renderSettings(); toast('결제수단을 삭제했어요 (이미 기록된 내역은 그대로 남아요)'); });
     $('#mAdd', el).onclick = () => { const n = $('#mNew').value.trim(); if (!n) return; S.methods.push({ id: 'm_' + uid(), name: n, kind: $('#mKind').value, order: S.methods.length, updatedAt: now() }); persist(); renderSettings(); };
     $('#exp', el).onclick = () => {
       const blob = new Blob([JSON.stringify(S, null, 1)], { type: 'application/json' });
@@ -1095,6 +1103,25 @@
     (x.recurring || []).forEach(r => {
       if (r.cat === 'sv_isa' && !r.mig16 && Number(r.amount) === 834000) { r.amount = 774000; bump(r); }
       if (r.cat === 'in_salary' && !r.mig16 && r.name === '급여') { r.name = '급여 (공제 전)'; bump(r); }
+    });
+    return n;
+  }
+  // 1회 이전 (v17): 반복 기록은 전부 '자동'(확정)으로, 비정기 36만 · ISA 71.4만, 운동+비정기 통장 합치기
+  function migrateV17(x) {
+    const t = now(); let n = 0; const bump = r => { r.mig17 = 1; r.updatedAt = Math.max(t, (r.updatedAt || 0) + 1); n++; };
+    (x.cats || []).forEach(c => {
+      if (c.id === 'sv_isa' && !c.mig17 && Number(c.budget) === 774000) { c.budget = 714000; bump(c); }
+      if (c.id === 'rs_irr' && !c.mig17 && Number(c.budget) === 300000) { c.budget = 360000; bump(c); }
+    });
+    (x.recurring || []).forEach(r => {
+      if (r.mig17) return;
+      if (r.cat === 'sv_isa' && Number(r.amount) === 774000) r.amount = 714000;
+      if (r.mode === 'estimate' || r.cat === 'sv_isa') { r.mode = 'fixed'; bump(r); }
+    });
+    (x.tx || []).forEach(tx => { if (tx.source === 'recurring' && tx.pending && !tx.mig17) { tx.pending = false; tx.mig17 = 1; tx.updatedAt = Math.max(t, (tx.updatedAt || 0) + 1); n++; } });
+    (x.assets || []).forEach(a => {
+      if (a.id === 'a_gym' && !a.mig17) { a.name = '적립 통장 (운동+비정기)'; a.link = 'rs_gym,rs_irr'; bump(a); }
+      if (a.id === 'a_irr' && !a.deleted) { a.deleted = true; bump(a); }
     });
     return n;
   }
@@ -1168,7 +1195,7 @@
             else if ((r.updatedAt || 0) > (S[n][i].updatedAt || 0)) { S[n][i] = r; changed = true; }
             P[n][r.id] = Math.max(P[n][r.id] ?? -1, r.updatedAt || 0);
           });
-          if (changed) { if (migrateSavingSplit(S) + migrateFoodSubs(S) + migratePayroll(S)) setTimeout(() => this.push(), 0); kvSet('state', S); render(true); }
+          if (changed) { if (migrateSavingSplit(S) + migrateFoodSubs(S) + migratePayroll(S) + migrateV17(S)) setTimeout(() => this.push(), 0); kvSet('state', S); render(true); }
           done(n);
         }, onErr));
       });
