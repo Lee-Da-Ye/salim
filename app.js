@@ -407,7 +407,21 @@
     }
     return carry;
   }
-  const reserveAuto = a => String(a.link).split(',').filter(Boolean).reduce((t, id) => t + reserveBalance(id), 0);
+  // 적립 통장 잔액: 시작 잔액 + 매달 적립(기본은 예산, 그 달에 실제로 넣은 금액을 입력했으면 그 금액) − 쓴 돈
+  function reserveDeposit(ym, ids) {
+    const act = (S.settings.reserveActual || {})[ym];
+    return act != null ? Number(act) || 0 : ids.reduce((t, id) => { const c = cat(id); return t + (c ? c.budget || 0 : 0); }, 0);
+  }
+  function reserveAuto(a) {
+    const ids = String(a.link).split(',').filter(Boolean);
+    const start = S.settings.reserveStart || todayStr().slice(0, 7), today = todayStr(), thisYm = today.slice(0, 7);
+    let dep = 0;
+    for (let ym = start; ym <= thisYm; ym = shiftYm(ym, 1)) { if (ym < thisYm || Number(today.slice(8)) >= reserveDay()) dep += reserveDeposit(ym, ids); }
+    const p0 = period(start);
+    const used = liveTx().filter(t => ids.includes(t.cat) && t.date >= p0.start).reduce((t, x) => t + x.amount, 0);
+    const open = ids.reduce((t, id) => t + (Number((S.settings.reserveOpening || {})[id]) || 0), 0);
+    return open + dep - used;
+  }
   function assetValue(a) {
     if (a.kind === 'reserve' && a.link) return reserveAuto(a) + (Number(a.adjust) || 0);
     let v = Number(a.base) || 0;
@@ -558,7 +572,7 @@
   // ----- 자산 탭 -----
   function assetChange(a) {   // 이번 기간 변화
     const st = stats(UI.ym);
-    if (a.kind === 'reserve' && a.link) return String(a.link).split(',').filter(Boolean).reduce((t, id) => { const c = cat(id); return t + (reservedThisMonth() ? (c ? c.budget : 0) : 0) - (st.byCat[id] || 0); }, 0);
+    if (a.kind === 'reserve' && a.link) { const ids = String(a.link).split(',').filter(Boolean); return (reservedThisMonth() ? reserveDeposit(UI.ym, ids) : 0) - ids.reduce((t, id) => t + (st.byCat[id] || 0), 0); }
     if (a.link) return st.txs.filter(t => t.cat === a.link && !t.pending && t.date >= (a.baseDate || '0000')).reduce((s, t) => s + t.amount, 0);
     return null;
   }
@@ -627,7 +641,11 @@
   function pager(st, pace) {
     return pagerHtml('pager', HOME_TABS, [groupPage(st, 'living', pace), groupPage(st, 'fixed', pace), reservePage(st), groupPage(st, 'saving', pace)], 'page');
   }
-  function bindPager(el) { bindPagerG(el, 'pager', 'page'); }
+  function bindPager(el) {
+    bindPagerG(el, 'pager', 'page');
+    const inp = $('[data-rdep]', el);
+    if (inp) inp.onchange = () => { const v = Number(inp.value.replace(/[^\d]/g, '')) || 0; S.settings.reserveActual = Object.assign({}, S.settings.reserveActual, { [UI.ym]: v }); S.settings.updatedAt = now(); persist(); renderHome(); toast('이번 달 적립액을 ' + won(v) + '원으로 고쳤어요'); };
+  }
   function groupPage(st, g, pace) {
     const cs = catsOf([g]);
     const b = cs.reduce((s, c) => s + (c.budget || 0), 0);
@@ -650,13 +668,13 @@
     const cs = catsOf(['reserve']);
     const ras = liveAssets().filter(a => a.kind === 'reserve');
     const bal = ras.length ? ras.reduce((t, a) => t + assetValue(a), 0) : cs.reduce((t, c) => t + reserveBalance(c.id), 0);
-    const add = cs.reduce((t, c) => t + (c.budget || 0), 0), used = cs.reduce((t, c) => t + (st.byCat[c.id] || 0), 0);
+    const add = reserveDeposit(UI.ym, cs.map(c => c.id)), used = cs.reduce((t, c) => t + (st.byCat[c.id] || 0), 0);
     return `<div class="card grp">
       <div class="res-h"><b>적립 통장 <span class="muted small">(운동+비정기)</span></b><span class="num" style="font-size:20px;font-weight:600;${bal < 0 ? 'color:var(--bad)' : ''}">${won(bal)}<span class="muted" style="font-size:13px"> 원</span></span></div>
-      <div class="res-r"><span>이번 달 적립</span>${reservedThisMonth() ? `<span class="num" style="color:var(--g-income)">+${won(add)}</span>` : `<span class="num">${reserveDay()}일 예정 (+${won(add)})</span>`}</div>
+      <div class="res-r"><span>이번 달 적립 <span class="muted small">(실제 금액으로 고치기)</span></span><span>${reservedThisMonth() ? `<input class="ainp num" inputmode="numeric" data-rdep value="${won(add)}" aria-label="이번 달 실제 적립액" style="color:var(--g-income)">` : `<span class="num">${reserveDay()}일 예정 (+${won(add)})</span>`}</span></div>
       <div class="res-r"><span>이번 달 사용</span><span class="num">${used ? '−' + won(used) : '0'}</span></div>
       ${cs.map(c => { const u = st.byCat[c.id] || 0, subs = subBreakdown(st, c.id); return `<div class="brow" style="margin-top:6px"><span class="nm">${esc(c.name)} <span class="muted small">월 ${man(c.budget)}</span></span><span class="am">${u ? '−' + won(u) : '0'}</span>${subs ? `<span class="sub">${subs}</span>` : ''}</div>`; }).join('')}
-      <p class="small muted" style="margin:10px 0 0">잔액이 실제와 다르면 자산 탭에서 고치세요. 이후로도 자동 계산돼요.</p>
+      <p class="small muted" style="margin:10px 0 0">적립액을 실제로 넣은 금액으로 고치면 잔액이 맞춰져요. 그냥 두면 예산 금액(운동+비정기)이 들어온 것으로 계산해요.</p>
     </div>`;
   }
   function subBreakdown(st, cid) {
@@ -981,7 +999,7 @@
         <button class="btn danger" id="wipe">이 기기의 데이터 모두 지우기</button>
       </div>
       <p class="small muted" id="persistInfo" style="text-align:center"></p>
-      <p class="small muted" style="text-align:center">Moneta v19 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
+      <p class="small muted" style="text-align:center">Moneta v20 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
 `], 'spage');
     try { if (navigator.storage && navigator.storage.persisted) navigator.storage.persisted().then(ok => { const pi = $('#persistInfo'); if (pi) pi.textContent = ok ? '이 기기 저장소: 보존 모드 (브라우저가 임의로 지우지 않음)' : '이 기기 저장소: 일반 모드 — 저장 공간이 부족하면 브라우저가 지울 수 있어요. 동기화를 꼭 켜두세요.'; }); } catch (e) {}
     bindPagerG(el, 'spager', 'spage');
