@@ -269,3 +269,6 @@ tr.dup td{color:var(--muted);text-decoration:line-through}
 .arow .av{text-align:right;display:grid}
 .arow .av small{font-size:12px}
 .dayin{width:44px!important;text-align:center!important;padding:3px 4px!important;margin:0 2px;font-family:var(--mono)}
+.ainp{width:112px;text-align:right;border:0;border-bottom:1px solid var(--line);background:transparent;color:var(--fg);font-size:15px;padding:4px 2px;border-radius:0}
+.ainp:focus{outline:none;border-bottom-color:var(--accent)}
+.adel{background:none;border:0;color:var(--bad);font-size:13px;padding:0 0 0 8px}

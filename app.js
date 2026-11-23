@@ -524,7 +524,7 @@
     const as = liveAssets().map(a => [a, assetValue(a)]);
     const pos = as.filter(([a, v]) => v > 0), debt = as.filter(([a, v]) => v < 0);
     const total = as.reduce((s, x) => s + x[1], 0);
-    if (!as.some(([a, v]) => v)) return `<div class="card"><div class="card-h"><b>자산 현황</b></div><p class="small muted" style="margin:0">설정 → <b>자산</b>에서 지금 잔액(비상금, 청약, 보증금, 대출 등)을 한 번 입력하면 여기에 순자산이 보여요. 저축·투자는 이후 매달 넣은 만큼 자동으로 더해져요.</p><button class="btn ghost" data-go="settings" data-spage="2" style="margin-top:8px">자산 입력하기</button></div>`;
+    if (!as.some(([a, v]) => v)) return `<div class="card"><div class="card-h"><b>자산 현황</b></div><p class="small muted" style="margin:0"><b>자산</b> 탭에서 지금 잔액(비상금, 청약, 보증금, 대출 등)을 한 번 입력하면 여기에 순자산이 보여요. 저축·투자는 이후 매달 넣은 만큼 자동으로 더해져요.</p><button class="btn ghost" data-go="assets" style="margin-top:8px">자산 입력하기</button></div>`;
     const byKind = {}; as.forEach(([a, v]) => { byKind[a.kind] = (byKind[a.kind] || 0) + v; });
     return `<div class="card">
       <div class="card-h"><b>자산 현황</b><span class="muted small">순자산</span></div>
@@ -573,49 +573,40 @@
     const pos = Object.keys(ASSET_KIND).filter(k => k !== 'debt' && byKind[k] > 0);
     const posSum = pos.reduce((s, k) => s + byKind[k], 0) || 1;
     const empty = !as.some(x => x.v);
+    const edit = !!UI.assetEdit;
     el.innerHTML = `
       <div class="card">
         <div class="card-h"><b>순자산</b><button class="eye" id="eyeBtn" aria-pressed="${hide}">${hide ? '금액 보기' : '금액 가리기'}</button></div>
         <div class="big">${M(total)}<span class="unit"> 원</span></div>
-        <div class="small" style="margin-top:4px;color:${delta > 0 ? 'var(--ok)' : delta < 0 ? 'var(--bad)' : 'var(--muted)'}">이번 달 ${delta > 0 ? '+' : delta < 0 ? '−' : ''}${hide ? '•••' : won(Math.abs(delta))}원 <span class="muted">(저축·투자 납입 + 적립 통장 증감)</span></div>
+        <div class="small" style="margin-top:4px;color:${delta > 0 ? 'var(--ok)' : delta < 0 ? 'var(--bad)' : 'var(--muted)'}">이번 달 ${delta > 0 ? '+' : delta < 0 ? '−' : ''}${hide ? '•••' : won(Math.abs(delta))}원</div>
       </div>
-      ${empty ? `<div class="card"><p class="small muted" style="margin:0">설정 → 자산에서 지금 잔액(비상금, 청약, 보증금, 대출 등)을 한 번 입력하면 여기에 보여요.</p><button class="btn ghost" data-go="settings" data-spage="2" style="margin-top:8px">자산 입력하기</button></div>` : `
-      <div class="card">
+      ${empty ? '' : `<div class="card">
         <div class="card-h"><b>구성</b><span class="muted small">부채 제외</span></div>
         <div class="kbars">${pos.map(k => `<div class="kb"><div class="kb-h"><span><span class="dot" style="background:${ASSET_KIND[k][1]}"></span>${ASSET_KIND[k][0]}</span><span class="num">${hide ? '' : man(byKind[k]) + ' · '}${Math.round(byKind[k] / posSum * 100)}%</span></div><div class="kb-bar"><i style="width:${(byKind[k] / posSum * 100).toFixed(1)}%;background:${ASSET_KIND[k][1]}"></i></div></div>`).join('')}
         ${byKind.debt ? `<div class="kb"><div class="kb-h"><span><span class="dot" style="background:var(--bad)"></span>부채</span><span class="num" style="color:var(--bad)">${hide ? '•••' : man(byKind.debt)}</span></div></div>` : ''}</div>
-      </div>
-      <div class="card">
-        <div class="card-h"><b>항목별</b><span class="muted small">이번 달 변화</span></div>
-        ${as.filter(x => x.v || x.d).map(x => `<div class="arow"><span class="dot" style="background:${ASSET_KIND[x.a.kind][1]}"></span><span class="an">${esc(x.a.name)}<small>${ASSET_KIND[x.a.kind][0]}${x.a.link && x.a.kind !== 'reserve' ? ' · 납입 자동 반영' : x.a.kind === 'reserve' ? ' · 자동 계산 + 수정 가능' : ' · 직접 입력'}</small></span>
-          <span class="av"><b class="num" style="${x.v < 0 ? 'color:var(--bad)' : ''}">${M(x.v)}</b>${x.d ? `<small class="num" style="color:${x.d > 0 ? 'var(--ok)' : 'var(--bad)'}">${x.d > 0 ? '+' : '−'}${hide ? '•••' : won(Math.abs(x.d))}</small>` : ''}</span></div>`).join('')}
-        <button class="btn ghost block" data-go="settings" data-spage="2" style="margin-top:10px">금액 수정하기</button>
       </div>`}
+      <div class="card">
+        <div class="card-h"><b>항목별</b><button class="eye" id="aEdit">${edit ? '완료' : '항목 편집'}</button></div>
+        <div class="small muted" style="margin-bottom:6px">${hide ? '' : '금액을 눌러 지금 잔액으로 고치면, 그 뒤로 납입·적립이 자동으로 더해져요. 투자는 가끔 평가금액으로 고쳐 주세요.'}</div>
+        ${as.map(x => `<div class="arow"><span class="dot" style="background:${ASSET_KIND[x.a.kind][1]}"></span><span class="an">${esc(x.a.name)}<small>${ASSET_KIND[x.a.kind][0]}${x.d ? ' · 이번 달 ' + (x.d > 0 ? '+' : '−') + (hide ? '•••' : won(Math.abs(x.d))) : ''}</small></span>
+          <span class="av">${hide ? `<b class="num">${M(x.v)}</b>` : `<input class="ainp num" inputmode="numeric" data-aval="${x.a.id}" value="${won(Math.abs(x.v))}" aria-label="${esc(x.a.name)} 금액" style="${x.v < 0 ? 'color:var(--bad)' : ''}">`}</span>${edit ? `<button data-adel="${x.a.id}" class="adel">삭제</button>` : ''}</div>`).join('')}
+        ${edit ? `<div class="row2" style="margin-top:10px"><input class="search" id="aName" placeholder="새 항목 이름 (예: 주식 계좌)"><select class="search" id="aKind">${Object.keys(ASSET_KIND).filter(k => k !== 'reserve').map(k => `<option value="${k}">${ASSET_KIND[k][0]}</option>`).join('')}</select></div>
+        <div class="row2"><input class="search" id="aBase" inputmode="numeric" placeholder="현재 금액"><select class="search" id="aLink"><option value="">납입 자동 더하기 없음</option>${catsOf(['saving']).map(c => `<option value="${c.id}">${esc(c.name)} 납입 자동</option>`).join('')}</select></div>
+        <button class="btn ghost block" id="aAdd">항목 추가</button>` : ''}
+      </div>
     `;
     $('#eyeBtn', el).onclick = () => { UI.hideAssets = !UI.hideAssets; try { localStorage.setItem('moneta-hide-assets', UI.hideAssets ? '1' : ''); } catch (e) {} renderAssets(); };
+    $('#aEdit', el).onclick = () => { UI.assetEdit = !UI.assetEdit; renderAssets(); };
+    $$('[data-aval]', el).forEach(inp => inp.onchange = () => {
+      const a = S.assets.find(x => x.id === inp.dataset.aval); const v = Number(inp.value.replace(/[^\d]/g, '')) || 0;
+      if (a.kind === 'reserve') a.adjust = v - reserveAuto(a);
+      else { a.base = a.kind === 'debt' ? -v : v; a.baseDate = todayStr(); }
+      a.updatedAt = now(); persist(); renderAssets();
+    });
+    $$('[data-adel]', el).forEach(b => b.onclick = () => { const a = S.assets.find(x => x.id === b.dataset.adel); a.deleted = true; a.updatedAt = now(); persist(); renderAssets(); });
+    const add = $('#aAdd', el);
+    if (add) add.onclick = () => { const n = $('#aName').value.trim(); if (!n) { toast('항목 이름을 입력해 주세요'); return; } S.assets.push({ id: 'a_' + uid(), name: n, kind: $('#aKind').value, link: $('#aLink').value, base: Number($('#aBase').value.replace(/[^\d]/g, '')) || 0, baseDate: todayStr(), order: S.assets.length, updatedAt: now() }); persist(); renderAssets(); toast('추가했어요'); };
   }
-  function trendCard() {
-    const months = []; for (let k = 5; k >= 0; k--) months.push(shiftYm(UI.ym, -k));
-    const data = months.map(m => { const st = stats(m); const g = id => catsOf([id]).reduce((s, c) => s + (st.byCat[c.id] || 0), 0); return { m, fixed: g('fixed'), living: g('living'), reserve: g('reserve'), saving: g('saving') }; });
-    const max = Math.max(1, ...data.map(d => d.fixed + d.living + d.reserve), ...data.map(d => d.saving));
-    const W = 300, H = 120, bw = 26, gap = (W - bw * 6) / 6;
-    const bars = data.map((d, i) => {
-      const x = gap / 2 + i * (bw + gap); let y = H;
-      const seg = [['fixed', 'var(--g-fixed)'], ['living', 'var(--g-living)'], ['reserve', 'var(--g-reserve)']].map(([k, c]) => { const h = d[k] / max * (H - 14); y -= h; return h > 0 ? `<rect x="${x}" y="${y.toFixed(1)}" width="${bw}" height="${h.toFixed(1)}" fill="${c}" rx="2"/>` : ''; }).join('');
-      const sy = H - d.saving / max * (H - 14);
-      const tot = d.fixed + d.living + d.reserve;
-      return seg + (d.saving ? `<rect x="${x - 3}" y="${sy.toFixed(1)}" width="${bw + 6}" height="2" fill="var(--g-saving)"/>` : '') +
-        `<text x="${x + bw / 2}" y="${H + 13}" text-anchor="middle" font-size="9" fill="${d.m === UI.ym ? 'var(--fg)' : 'var(--muted)'}" ${d.m === UI.ym ? 'font-weight="700"' : ''}>${Number(d.m.slice(5))}월</text>` +
-        (tot ? `<text x="${x + bw / 2}" y="${(y - 3).toFixed(1)}" text-anchor="middle" font-size="8" fill="var(--muted)" font-family="var(--mono)">${Math.round(tot / 10000)}</text>` : '');
-    }).join('');
-    return `<div class="card">
-      <div class="card-h"><b>월별 지출 추이</b><span class="muted small">단위 만원</span></div>
-      <svg viewBox="0 0 ${W} ${H + 18}" class="trend" role="img" aria-label="최근 6개월 지출">${bars}<line x1="0" y1="${H}" x2="${W}" y2="${H}" stroke="var(--line)"/></svg>
-      <div class="legend"><div><span class="dot" style="background:var(--g-fixed)"></span><span>고정</span></div><div><span class="dot" style="background:var(--g-living)"></span><span>생활</span></div><div><span class="dot" style="background:var(--g-reserve)"></span><span>적립</span></div><div><span class="dot" style="background:var(--g-saving);border-radius:1px;height:3px"></span><span>저축·투자</span></div></div>
-    </div>`;
-  }
-
-  // 공용: 탭 + 좌우 스와이프 (높이는 보고 있는 페이지에 맞춤)
   function pagerHtml(id, tabs, pages, key) {
     const idx = Math.min(UI[key] || 0, tabs.length - 1);
     return `<div class="pg-tabs" role="tablist" data-for="${id}">${tabs.map((n, i) => `<button role="tab" data-pg="${i}" class="${i === idx ? 'on' : ''}">${n}</button>`).join('')}</div>
@@ -657,17 +648,15 @@
   }
   function reservePage(st) {
     const cs = catsOf(['reserve']);
+    const ras = liveAssets().filter(a => a.kind === 'reserve');
+    const bal = ras.length ? ras.reduce((t, a) => t + assetValue(a), 0) : cs.reduce((t, c) => t + reserveBalance(c.id), 0);
+    const add = cs.reduce((t, c) => t + (c.budget || 0), 0), used = cs.reduce((t, c) => t + (st.byCat[c.id] || 0), 0);
     return `<div class="card grp">
-      ${cs.map((c, i) => {
-        const bal = reserveBalance(c.id), used = st.byCat[c.id] || 0, subs = subBreakdown(st, c.id);
-        return `<div class="res" style="${i ? 'border-top:1px solid var(--line);padding-top:12px;margin-top:4px' : ''}">
-          <div class="res-h"><b>${esc(c.name)} 통장</b><span class="num" style="font-size:20px;font-weight:600;${bal < 0 ? 'color:var(--bad)' : ''}">${won(bal)}<span class="muted" style="font-size:13px"> 원</span></span></div>
-          <div class="res-r"><span>이번 달 적립</span>${reservedThisMonth() ? `<span class="num" style="color:var(--g-income)">+${won(c.budget)}</span>` : `<span class="num">${reserveDay()}일 예정 (+${won(c.budget)})</span>`}</div>
-          <div class="res-r"><span>이번 달 사용</span><span class="num">${used ? '−' + won(used) : '0'}</span></div>
-          ${subs ? `<span class="sub">${subs}</span>` : ''}
-        </div>`;
-      }).join('')}
-      <p class="small muted" style="margin:10px 0 0">통장 잔액 = 시작 잔액 + 매달 적립액 − 쓴 돈 (${esc(S.settings.reserveStart)}부터 · 시작 잔액은 설정에서)</p>
+      <div class="res-h"><b>적립 통장 <span class="muted small">(운동+비정기)</span></b><span class="num" style="font-size:20px;font-weight:600;${bal < 0 ? 'color:var(--bad)' : ''}">${won(bal)}<span class="muted" style="font-size:13px"> 원</span></span></div>
+      <div class="res-r"><span>이번 달 적립</span>${reservedThisMonth() ? `<span class="num" style="color:var(--g-income)">+${won(add)}</span>` : `<span class="num">${reserveDay()}일 예정 (+${won(add)})</span>`}</div>
+      <div class="res-r"><span>이번 달 사용</span><span class="num">${used ? '−' + won(used) : '0'}</span></div>
+      ${cs.map(c => { const u = st.byCat[c.id] || 0, subs = subBreakdown(st, c.id); return `<div class="brow" style="margin-top:6px"><span class="nm">${esc(c.name)} <span class="muted small">월 ${man(c.budget)}</span></span><span class="am">${u ? '−' + won(u) : '0'}</span>${subs ? `<span class="sub">${subs}</span>` : ''}</div>`; }).join('')}
+      <p class="small muted" style="margin:10px 0 0">잔액이 실제와 다르면 자산 탭에서 고치세요. 이후로도 자동 계산돼요.</p>
     </div>`;
   }
   function subBreakdown(st, cid) {
@@ -934,7 +923,7 @@
     const el = $('#view-settings');
     const groups = ['living', 'fixed', 'reserve', 'saving'];
     const total = S.cats.filter(c => !c.deleted && groups.includes(c.group)).reduce((s, c) => s + (Number(c.budget) || 0), 0);
-    el.innerHTML = pagerHtml('spager', ['기본', '예산', '자산', '반복', '분류', '결제·백업'], [`      <h2>동기화</h2>
+    el.innerHTML = pagerHtml('spager', ['기본', '예산', '반복', '분류', '결제·백업'], [`      <h2>동기화</h2>
       <div class="card set">
         <div class="small muted">${fbConf() ? (Sync.user ? `<b style="color:var(--fg)">${esc(Sync.user.email)}</b>로 로그인됨 · 입력하면 다른 기기에 바로 반영돼요` : '구글로 한 번 로그인하면 계속 유지되고, 기기끼리 실시간으로 맞춰져요.') : 'config.js에 Firebase 설정을 넣으면 동기화가 켜져요. (README 참고)'}</div>
         ${fbConf() ? `<div class="btns">${Sync.user ? '<button class="btn" id="syncNow">지금 동기화</button><button class="btn ghost" id="syncOff">로그아웃</button>' : '<button class="btn" id="syncNow">구글로 로그인</button>'}</div>` : ''}
@@ -946,28 +935,18 @@
       <div class="card set">
         <div class="set-row"><span>예산 시작일 <span class="muted small">(매월)</span></span><input inputmode="numeric" id="startDay" value="${S.settings.startDay}"></div>
         <div class="set-row"><span>내 이름 <span class="muted small">(본인 이체 구분)</span></span><input id="myName" value="${esc(S.settings.myName)}" style="font-family:var(--sans)"></div>
-        <div class="set-row"><span>적립 시작 월</span><input id="resStart" value="${esc(S.settings.reserveStart)}" placeholder="2026-11"></div>
         <div class="set-row"><span>생활비 이월 <span class="muted small">(남은 돈·초과분을 다음 달로)</span></span><select id="carryOn" class="search" style="width:auto;padding:5px 8px"><option value="on" ${S.settings.carry !== false ? 'selected' : ''}>켜기</option><option value="off" ${S.settings.carry === false ? 'selected' : ''}>끄기</option></select></div>
+        <details style="margin-top:6px"><summary class="small muted" style="cursor:pointer">고급 설정</summary>
+        <div class="set-row"><span>적립 시작 월</span><input id="resStart" value="${esc(S.settings.reserveStart)}" placeholder="2026-11"></div>
         <div class="set-row"><span>이월 시작 월</span><input id="carryStart" value="${esc(S.settings.carryStart || S.settings.reserveStart || '')}" placeholder="2026-11"></div>
         <div class="set-row"><span>매월 적립일</span><input inputmode="numeric" id="resDay" value="${reserveDay()}"></div>
-        ${catsOf(['reserve']).map(c => `<div class="set-row"><span>${esc(c.name)} 시작 잔액</span><input inputmode="numeric" data-open="${c.id}" value="${won((S.settings.reserveOpening || {})[c.id] || 0)}"></div>`).join('')}
+        </details>
       </div>
 
 `, `      <h2>월 예산 <span class="num" style="float:right">${won(total)}원</span></h2>
       ${groups.map(g => `<div class="card set"><b class="small" style="display:flex;gap:6px;align-items:center"><span class="dot" style="background:${GROUPS[g].color}"></span>${GROUPS[g].name}</b>
         ${catsOf([g]).map(c => `<div class="set-row"><span>${esc(c.name)}</span><input inputmode="numeric" data-budget="${c.id}" value="${won(c.budget)}" aria-label="${esc(c.name)} 예산"></div>`).join('')}</div>`).join('')}
 
-`, `      <h2>자산 <span class="muted small" style="font-weight:400">지금 잔액을 입력하면 기준일이 오늘로 바뀌어요</span></h2>
-      <div class="card set">
-        <div class="small muted">적립 통장은 앱이 자동 계산하고, 실제 잔액과 다르면 금액을 고치세요 (그 뒤로도 자동 계산이 이어져요). 저축·투자는 입력한 금액에 그 뒤로 매달 넣은 돈이 더해져요. 투자는 가끔 평가금액으로 다시 입력해 주세요.</div>
-        ${liveAssets().map(a => `<div class="set-row" style="flex-wrap:wrap">
-          <span style="flex:1 1 150px;min-width:0"><b style="font-weight:500">${esc(a.name)}</b> <span class="muted small">${ASSET_KIND[a.kind][0]}${a.link && a.kind !== 'reserve' ? ' · ' + esc(a.baseDate.slice(5).replace('-', '/')) + ' 기준 + 납입' : ''}</span><br><span class="small">현재 <b class="num">${won(assetValue(a))}</b>원</span></span>
-          ${a.kind === 'reserve' ? `<input inputmode="numeric" data-ares="${a.id}" value="${won(assetValue(a))}" aria-label="${esc(a.name)} 잔액">` : `<input inputmode="numeric" data-abase="${a.id}" value="${won(a.base)}" aria-label="${esc(a.name)} 금액">`}
-          <button data-adel="${a.id}" style="background:none;border:0;color:var(--bad);font-size:13px">삭제</button></div>`).join('')}
-        <div class="row2"><input class="search" id="aName" placeholder="새 자산 이름 (예: 주식 계좌)"><select class="search" id="aKind">${Object.keys(ASSET_KIND).filter(k => k !== 'reserve').map(k => `<option value="${k}">${ASSET_KIND[k][0]}</option>`).join('')}</select></div>
-        <div class="row2"><input class="search" id="aBase" inputmode="numeric" placeholder="현재 금액"><select class="search" id="aLink"><option value="">자동 더하기 없음</option>${catsOf(['saving']).map(c => `<option value="${c.id}">${esc(c.name)} 납입 자동 더하기</option>`).join('')}</select></div>
-        <button class="btn ghost" id="aAdd">자산 추가</button>
-      </div>
 `, `      <h2>반복 기록 <span class="muted small" style="font-weight:400">매월 그 날짜가 되면 자동 기록</span></h2>
       <div class="card set">
         <div class="small muted">정한 날짜에 정한 금액으로 자동 반영돼요. 기록은 따로 안 해도 되고, 금액이 다른 달만 내역에서 그 항목을 눌러 고치세요. '예정'으로 두면 "확인 필요"로 표시돼요.</div>
@@ -1002,17 +981,12 @@
         <button class="btn danger" id="wipe">이 기기의 데이터 모두 지우기</button>
       </div>
       <p class="small muted" id="persistInfo" style="text-align:center"></p>
-      <p class="small muted" style="text-align:center">Moneta v18 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
+      <p class="small muted" style="text-align:center">Moneta v19 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
 `], 'spage');
     try { if (navigator.storage && navigator.storage.persisted) navigator.storage.persisted().then(ok => { const pi = $('#persistInfo'); if (pi) pi.textContent = ok ? '이 기기 저장소: 보존 모드 (브라우저가 임의로 지우지 않음)' : '이 기기 저장소: 일반 모드 — 저장 공간이 부족하면 브라우저가 지울 수 있어요. 동기화를 꼭 켜두세요.'; }); } catch (e) {}
     bindPagerG(el, 'spager', 'spage');
     const numIn = (inp, fn) => { inp.onchange = () => { const v = Number(inp.value.replace(/[^\d-]/g, '')) || 0; fn(v); inp.value = won(v); persist(); }; };
     $$('[data-budget]', el).forEach(inp => numIn(inp, v => { const c = cat(inp.dataset.budget); c.budget = v; c.updatedAt = now(); renderSettings(); }));
-    $$('[data-open]', el).forEach(inp => numIn(inp, v => { S.settings.reserveOpening = Object.assign({}, S.settings.reserveOpening, { [inp.dataset.open]: v }); S.settings.updatedAt = now(); }));
-    $$('[data-abase]', el).forEach(inp => numIn(inp, v => { const a = S.assets.find(x => x.id === inp.dataset.abase); a.base = v; a.baseDate = todayStr(); a.updatedAt = now(); renderSettings(); }));
-    $$('[data-ares]', el).forEach(inp => numIn(inp, v => { const a = S.assets.find(x => x.id === inp.dataset.ares); a.adjust = v - reserveAuto(a); a.updatedAt = now(); renderSettings(); }));
-    $$('[data-adel]', el).forEach(b => b.onclick = () => { const a = S.assets.find(x => x.id === b.dataset.adel); a.deleted = true; a.updatedAt = now(); persist(); renderSettings(); });
-    $('#aAdd', el).onclick = () => { const n = $('#aName').value.trim(); if (!n) { toast('자산 이름을 입력해 주세요'); return; } S.assets.push({ id: 'a_' + uid(), name: n, kind: $('#aKind').value, link: $('#aLink').value, base: Number($('#aBase').value.replace(/[^\d]/g, '')) || 0, baseDate: todayStr(), order: S.assets.length, updatedAt: now() }); persist(); renderSettings(); toast('추가했어요'); };
     $$('[data-rmode]', el).forEach(sel => sel.onchange = () => { const r = S.recurring.find(x => x.id === sel.dataset.rmode); if (sel.value === 'off') r.active = false; else { r.active = true; r.mode = sel.value; } r.updatedAt = now(); persist(); generateRecurring(); });
     $$('[data-rday]', el).forEach(inp => inp.onchange = () => { const r = S.recurring.find(x => x.id === inp.dataset.rday); const d = Math.min(Math.max(parseInt(inp.value, 10) || r.day, 1), 31); inp.value = d; if (d !== r.day) { r.day = d; r.updatedAt = now(); persist(); generateRecurring(); toast('매월 ' + d + '일로 바꿨어요 (다음 기록부터 적용)'); } });
     $$('[data-ramt]', el).forEach(inp => numIn(inp, v => { const r = S.recurring.find(x => x.id === inp.dataset.ramt); r.amount = v; r.updatedAt = now(); }));
