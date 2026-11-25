@@ -394,6 +394,19 @@
     const used = liveTx().filter(t => t.cat === cid && t.date >= p0.start).reduce((s, t) => s + t.amount, 0);
     return (Number((S.settings.reserveOpening || {})[cid]) || 0) + months * (c.budget || 0) - used;
   }
+  // 머니통장 흐름: 생활비 카테고리 지출 + 머니통장(머니카드·머니통장 이체)으로 낸 다른 지출(구독 등) − 머니통장으로 들어온 수입(이자·환불 등)
+  const isWallet = t => t.method === 'm_money' || t.method === 'm_moneyacct';
+  function walletFlow(st) {
+    const living = catsOf(['living']).reduce((s, c) => s + (st.byCat[c.id] || 0), 0);
+    let extra = 0, inc = 0;
+    for (const t of st.txs) {
+      if (!isWallet(t)) continue;
+      const c = cat(t.cat); const g = c ? c.group : 'living';
+      if (g === 'income') inc += t.amount;
+      else if (g !== 'living' && GROUPS[g].spend) extra += t.amount;
+    }
+    return { living, extra, inc, spent: living + extra };
+  }
   // 생활비 이월: 시작 월부터 지난달까지 (예산 − 쓴 돈)을 누적. 설정에서 끌 수 있음
   function livingCarry(ym) {
     if (S.settings.carry === false) return 0;
@@ -402,8 +415,8 @@
     const base = living.reduce((s, c) => s + (c.budget || 0), 0);
     let carry = 0;
     for (let m = start; m < ym; m = shiftYm(m, 1)) {
-      const st = stats(m);
-      carry += base - living.reduce((s, c) => s + (st.byCat[c.id] || 0), 0);
+      const w = walletFlow(stats(m));
+      carry += base + w.inc - w.spent;
     }
     return carry;
   }
@@ -462,10 +475,11 @@
     }
 
     const living = catsOf(['living']);
+    const wf = walletFlow(st);
     const lBase = living.reduce((s, c) => s + (c.budget || 0), 0);
     const carry = livingCarry(UI.ym);
-    const lBudget = lBase + carry;
-    const lSpent = living.reduce((s, c) => s + (st.byCat[c.id] || 0), 0);
+    const lBudget = lBase + carry + wf.inc;
+    const lSpent = wf.spent;
     const left = lBudget - lSpent;
     const fair = Math.round(lBudget * pace);
     const s = stateOf(lSpent, lBudget, pace);
@@ -485,7 +499,7 @@
           <div class="lv-top">
             ${donut(lSpent, lBudget, pace, s)}
             <div class="lv-info">
-              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px"><span class="lbl">생활비 남은 돈</span>${chip}</div>
+              <div style="display:flex;justify-content:space-between;align-items:center;gap:6px"><span class="lbl">머니통장 잔액</span>${chip}</div>
               <div class="big" style="${left < 0 ? 'color:var(--bad)' : ''}">${won(left)}<span class="unit"> 원</span></div>
               <div class="kv"><span>쓴 돈</span><b class="num">${won(lSpent)} / ${won(lBudget)}</b></div>
               <div class="kv"><span>오늘까지 적정</span><b class="num">${won(fair)}</b></div>
@@ -494,9 +508,9 @@
             </div>
           </div>
           <div class="mini">${living.map(c => { const v = st.byCat[c.id] || 0, ss = stateOf(v, c.budget, pace); return `<div class="mi"><div class="mi-h"><span>${esc(c.name)}</span><span class="num">${man(v)} / ${man(c.budget)}</span></div><div class="meter ${ss}"><i style="width:${Math.min(v / (c.budget || 1), 1) * 100}%;${ss === 'ok' ? 'background:var(--g-living)' : ''}"></i><b style="left:${Math.min(pace, 1) * 100}%"></b></div></div>`; }).join('')}</div>
+          ${wf.inc || wf.extra ? `<div class="small muted" style="margin-bottom:4px">${wf.inc ? '기타 입금 +' + won(wf.inc) : ''}${wf.inc && wf.extra ? ' · ' : ''}${wf.extra ? '구독 등 머니통장 결제 −' + won(wf.extra) : ''}</div>` : ''}
           <div class="small muted">${p.start.slice(5).replace('-', '.')} ~ ${p.end.slice(5).replace('-', '.')} · ${elapsed}/${p.days}일 · 세로선은 오늘까지 적정 사용 위치</div>
         </div>
-        ${flowCard(st)}
       </div>
       ${pager(st, pace)}
       ${compareCard()}
@@ -649,7 +663,8 @@
   function groupPage(st, g, pace) {
     const cs = catsOf([g]);
     const b = cs.reduce((s, c) => s + (c.budget || 0), 0);
-    const sp = cs.reduce((s, c) => s + (st.byCat[c.id] || 0), 0);
+    const wf = g === 'living' ? walletFlow(st) : null;
+    const sp = g === 'living' ? wf.spent : cs.reduce((s, c) => s + (st.byCat[c.id] || 0), 0);
     const head = { living: ['쓴 돈', '예산'], fixed: ['나간 돈', '예상'], saving: ['넣은 돈', '목표'] }[g];
     return `<div class="card grp">
       <div class="grp-h"><b><span class="dot" style="background:${GROUPS[g].color}"></span>${head[0]} / ${head[1]}</b><span class="num muted">${won(sp)} / ${won(b)}</span></div>
@@ -662,6 +677,8 @@
           <div class="meter ${s}"><i style="width:${Math.min(v / (c.budget || 1), 1) * 100}%;background:${s === 'ok' ? GROUPS[g].color : ''}"></i></div>
           ${subs && g === 'living' ? `<span class="sub">${subs}</span>` : ''}</div>`;
       }).join('')}
+      ${wf && wf.extra ? `<div class="brow"><span class="nm">구독 등 머니통장 결제 <span class="muted small">(예산 밖)</span></span><span class="am">${won(wf.extra)}</span></div>` : ''}
+      ${wf && wf.inc ? `<div class="brow"><span class="nm">기타 입금 <span class="muted small">(이자·환불 등)</span></span><span class="am" style="color:var(--g-income)">+${won(wf.inc)}</span></div>` : ''}
     </div>`;
   }
   function reservePage(st) {
@@ -999,7 +1016,7 @@
         <button class="btn danger" id="wipe">이 기기의 데이터 모두 지우기</button>
       </div>
       <p class="small muted" id="persistInfo" style="text-align:center"></p>
-      <p class="small muted" style="text-align:center">Moneta v20 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
+      <p class="small muted" style="text-align:center">Moneta v23 · 이 기기 ID ${esc(L.deviceId.slice(-6))}</p>
 `], 'spage');
     try { if (navigator.storage && navigator.storage.persisted) navigator.storage.persisted().then(ok => { const pi = $('#persistInfo'); if (pi) pi.textContent = ok ? '이 기기 저장소: 보존 모드 (브라우저가 임의로 지우지 않음)' : '이 기기 저장소: 일반 모드 — 저장 공간이 부족하면 브라우저가 지울 수 있어요. 동기화를 꼭 켜두세요.'; }); } catch (e) {}
     bindPagerG(el, 'spager', 'spage');
